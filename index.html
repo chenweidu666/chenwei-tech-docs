@@ -3,51 +3,188 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="description" content="陈纬 · AI 工程技术文档（训练 / 部署 / RAG / Agent）" />
+  <meta name="description" content="陈纬 · AI工程技术文档（训练 / 部署 / RAG / Agent）" />
   <title>陈纬 · 技术文档</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/docsify@4/lib/themes/vue.css" />
   <style>
-    :root { --theme-color: #2563eb; }
-    .app-name-link img { max-height: 2rem; }
+    :root {
+      --theme-color: #2563eb;
+      --sidebar-width: 17rem;
+    }
+
+    /* 顶部导航栏美化 */
+    .app-nav {
+      margin-top: 0.5rem;
+    }
+
+    /* 侧边栏 */
+    .sidebar {
+      border-right: 1px solid #e5e7eb;
+      background: #f8fafc;
+    }
+
+    .sidebar-nav li a {
+      font-size: 0.9rem;
+      color: #374151;
+      padding: 0.3rem 0;
+      transition: color 0.15s;
+    }
+
+    .sidebar-nav li.active > a,
+    .sidebar-nav li a:hover {
+      color: #2563eb;
+      font-weight: 600;
+    }
+
+    /* 内容区域 */
+    .content {
+      padding-top: 2rem;
+    }
+
+    /* 标题美化 */
+    .markdown-section h1 {
+      font-size: 1.9rem;
+      font-weight: 700;
+      border-bottom: 2px solid #e5e7eb;
+      padding-bottom: 0.5rem;
+      margin-bottom: 1.25rem;
+      color: #1e2432;
+    }
+
+    .markdown-section h2 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      border-left: 4px solid #2563eb;
+      padding-left: 0.75rem;
+      background: #eff6ff;
+      border-radius: 0 6px 6px 0;
+      padding: 0.4rem 0.75rem;
+      margin-top: 2rem;
+      color: #1e40af;
+    }
+
+    .markdown-section h3 {
+      font-size: 1.1rem;
+      color: #1e2432;
+      font-weight: 600;
+      margin-top: 1.5rem;
+    }
+
+    /* 代码块 */
+    .markdown-section pre {
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    /* 表格 */
+    .markdown-section table {
+      border-collapse: collapse;
+      width: 100%;
+      font-size: 0.9rem;
+    }
+
+    .markdown-section table th {
+      background: #eff6ff;
+      color: #1e40af;
+      font-weight: 600;
+      padding: 0.6rem 0.85rem;
+      border: 1px solid #dbeafe;
+    }
+
+    .markdown-section table td {
+      padding: 0.55rem 0.85rem;
+      border: 1px solid #e5e7eb;
+    }
+
+    .markdown-section table tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+
+    /* 引用块 */
+    .markdown-section blockquote {
+      border-left: 4px solid #2563eb;
+      background: #eff6ff;
+      border-radius: 0 6px 6px 0;
+      padding: 0.6rem 1rem;
+      color: #374151;
+      margin: 1rem 0;
+    }
+
+    /* 搜索框 */
+    .search input {
+      border-radius: 6px;
+      border: 1px solid #d1d5db;
+      padding: 0.4rem 0.75rem;
+      font-size: 0.88rem;
+    }
+
+    .search input:focus {
+      border-color: #2563eb;
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.1);
+      outline: none;
+    }
+
+    /* 首页 cover 自定义（如使用） */
+    section.cover .cover-main {
+      margin: 0 auto;
+    }
+
+    /* 进度条颜色 */
+    #nprogress .bar {
+      background: #2563eb !important;
+    }
   </style>
 </head>
 <body>
   <div id="app">加载中…</div>
   <script>
     window.$docsify = {
-      name: "陈纬 · 技术文档",
+      name: "⚡ 陈纬 · 技术文档",
       repo: "chenweidu666/chenwei-tech-docs",
       loadSidebar: true,
       subMaxLevel: 3,
       auto2top: true,
       relativePath: true,
+      pagination: {
+        previousText: "← 上一章",
+        nextText: "下一章 →",
+        crossChapter: true,
+      },
       search: {
         paths: "auto",
-        placeholder: "搜索文档…",
-        noData: "无结果",
+        placeholder: "🔍 搜索文档…",
+        noData: "没有找到相关内容",
         depth: 4,
       },
+      plugins: [],
     };
   </script>
+
+  <!-- docsify core -->
   <script src="https://cdn.jsdelivr.net/npm/docsify@4"></script>
+
+  <!-- 插件 -->
   <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/search.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/docsify@4/lib/plugins/zoom-image.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/docsify-copy-code@2/dist/docsify-copy-code.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify-pagination/dist/docsify-pagination.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docsify-progress@latest/dist/progress.min.js"></script>
+
+  <!-- 代码高亮 -->
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-bash.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-python.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-yaml.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-json.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/prismjs@1/components/prism-docker.min.js"></script>
+
+  <!-- Mermaid 图表 -->
   <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
   <script>
-    mermaid.initialize({ startOnLoad: false });
+    mermaid.initialize({ startOnLoad: false, theme: "default" });
     window.$docsify.plugins = (window.$docsify.plugins || []).concat(function (hook) {
       hook.beforeEach(function (content) {
         return content.replace(/```mermaid\n([\s\S]*?)```/g, function (_, code) {
-          return (
-            '<div class="mermaid">' +
-            code.replace(/^\n+|\n+$/g, "") +
-            "</div>"
-          );
+          return '<div class="mermaid">' + code.replace(/^\n+|\n+$/g, "") + "</div>";
         });
       });
       hook.doneEach(function () {
