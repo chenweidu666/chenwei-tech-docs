@@ -7,6 +7,7 @@
   #### 1.1.1.1. 标题
 - 按标题层级（# 数量）维护计数；跳过围栏代码块。
 - 自动剥除标题上已有的「数字.」前缀或「一、」等旧编号后再套新编号。
+- 全篇仅保留**第一个** ATX H1（`# `）；其后出现的 `# ` 一律先降为 `## `，再参与编号（避免附录里出现与篇首平级的 `# 2.`）。
 """
 from __future__ import annotations
 
@@ -17,6 +18,34 @@ from pathlib import Path
 DOCS = Path(__file__).resolve().parent.parent / "docs"
 
 HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
+
+
+def demote_extra_h1(text: str) -> str:
+    """第一个 `# 标题` 保留；之后所有 `# 标题` 改为 `## 标题`（不在代码围栏内）。"""
+    lines = text.splitlines(keepends=True)
+    out: list[str] = []
+    in_code = False
+    first_h1 = False
+    for line in lines:
+        st = line.rstrip("\n\r").strip()
+        if st.startswith("```"):
+            in_code = not in_code
+            out.append(line)
+            continue
+        if in_code:
+            out.append(line)
+            continue
+        raw = line.rstrip("\n\r")
+        if raw.startswith("# ") and not raw.startswith("##"):
+            ending = "\n" if line.endswith("\n") else ""
+            if first_h1:
+                out.append(f"## {raw[2:]}{ending}")
+            else:
+                first_h1 = True
+                out.append(line)
+            continue
+        out.append(line)
+    return "".join(out)
 
 
 def strip_leading_numbering(title: str) -> str:
@@ -89,7 +118,7 @@ def main() -> int:
     changed = 0
     for path in sorted(DOCS.rglob("*.md")):
         raw = path.read_text(encoding="utf-8")
-        new = process_markdown(raw)
+        new = process_markdown(demote_extra_h1(raw))
         if new != raw:
             path.write_text(new, encoding="utf-8")
             print(f"OK {path.relative_to(DOCS)}")
