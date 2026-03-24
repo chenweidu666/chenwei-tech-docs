@@ -3,7 +3,7 @@
 从 GitHub 仅拉取 Markdown 到归档目录 projects/（不克隆代码）。
 镜像已迁出站点 docs/，默认写入 1_陈纬简历/归档/from_3_技术文档/projects/。
 当前仅同步两个公开仓：
-  - CineMaker-AI-Platform：根 README + docs/guides/
+  - CineMaker-AI-Platform：根 README + docs/guides/（含 **docs/guides/images/** 资源）
   - OpenClaw-Deployment-Issues：根 README + docs/
 """
 from __future__ import annotations
@@ -29,9 +29,9 @@ def http_get_json(url: str) -> dict:
         return json.load(r)
 
 
-def http_get_bytes(url: str) -> bytes:
+def http_get_bytes(url: str, *, timeout: int = 120) -> bytes:
     req = urllib.request.Request(url, headers={"User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=120) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return r.read()
 
 
@@ -120,6 +120,47 @@ def sync_cinemaker_guides() -> int:
     )
 
 
+def _github_contents_list(repo: str, content_path: str) -> list[dict]:
+    url = f"https://api.github.com/repos/{OWNER}/{repo}/contents/{content_path}?ref={BRANCH}"
+    req = urllib.request.Request(url, headers={"User-Agent": UA, "Accept": "application/vnd.github+json"})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        data = json.load(r)
+    if not isinstance(data, list):
+        return []
+    return data
+
+
+def sync_cinemaker_guide_images() -> int:
+    """
+    CineMaker docs/guides/images/* →
+      1) docs/07_项目总结/guides/images/（与 7.1 下 md 中 ../guides/images/ 一致）
+      2) 归档 projects/CineMaker-AI-Platform/docs/guides/images/
+    """
+    repo = "CineMaker-AI-Platform"
+    remote_dir = "docs/guides/images"
+    items = _github_contents_list(repo, remote_dir)
+    dests = [
+        ROOT / "docs" / "07_项目总结" / "guides" / "images",
+        OUT / "CineMaker-AI-Platform" / "docs" / "guides" / "images",
+    ]
+    n = 0
+    for item in items:
+        if item.get("type") != "file":
+            continue
+        name = item.get("name") or ""
+        dl = item.get("download_url")
+        if not name or not dl:
+            continue
+        body = http_get_bytes(dl, timeout=600)
+        for d in dests:
+            d.mkdir(parents=True, exist_ok=True)
+            (d / name).write_bytes(body)
+        print(f"OK {repo} {remote_dir}/{name} ({len(body)} B)", flush=True)
+        n += 1
+        time.sleep(0.12)
+    return n
+
+
 def sync_openclaw() -> int:
     """OpenClaw-Deployment-Issues：README + docs/*.md"""
     return sync_md_tree(
@@ -130,11 +171,26 @@ def sync_openclaw() -> int:
 
 
 def main() -> None:
+    import argparse
+
+    ap = argparse.ArgumentParser(description="从 GitHub 拉取 CineMaker / OpenClaw 文档与 CineMaker 配图")
+    ap.add_argument(
+        "--cinemaker-images-only",
+        action="store_true",
+        help="仅下载 CineMaker docs/guides/images/* 到 docs/07_项目总结/guides/images/ 与归档（不拉 md）",
+    )
+    args = ap.parse_args()
+    if args.cinemaker_images_only:
+        n = sync_cinemaker_guide_images()
+        print(f"\nCineMaker guides/images：{n} 个文件。")
+        return
+
     OUT.mkdir(parents=True, exist_ok=True)
     total = 0
     total += sync_cinemaker_guides()
+    total += sync_cinemaker_guide_images()
     total += sync_openclaw()
-    print(f"\nMarkdown 合计拉取约 {total} 个（含覆盖）。")
+    print(f"\nMarkdown + CineMaker 图片合计处理约 {total} 个文件（含覆盖）。")
 
 
 if __name__ == "__main__":

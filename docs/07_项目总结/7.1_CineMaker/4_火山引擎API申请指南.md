@@ -54,7 +54,7 @@ CineMaker 用到以下火山引擎服务，请按需开通：
 进入 [火山方舟 → 开通管理](https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement) 页面，在顶部的「领取免费资源包」区域领取：
 
 <div align="center">
-<img src="./images/30-volcengine-free-quota.png" alt="火山引擎免费额度 - 新用户赠送 50 万 tokens + 每日协作奖励" width="720">
+<img src="../guides/images/30-volcengine-free-quota.png" alt="火山引擎免费额度 - 新用户赠送 50 万 tokens + 每日协作奖励" width="720">
 
 *▲ **火山引擎免费额度**。新用户赠送 50 万 tokens，协作奖励计划每日最高赠送 500 万 tokens。各模型的免费额度在「开通管理」页面可查看。*
 </div>
