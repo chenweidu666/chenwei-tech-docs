@@ -35,7 +35,6 @@
   * [5.2 MCP 协议](docs/05_Agent开发/5.2_MCP协议.md)
   * [5.3 Dify 工作流平台](docs/05_Agent开发/5.3_Dify工作流平台.md)
   * [5.4 AppAgent Android自动化](docs/05_Agent开发/5.4_AppAgent.md)
-  * [5.5 OpenClaw 与实践索引](docs/05_Agent开发/5.5_OpenClaw.md)
 
 ---
 

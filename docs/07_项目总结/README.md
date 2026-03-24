@@ -8,4 +8,4 @@
 
 **已从本站移除、不再维护的篇目**（太初 RAG、太初推理、展锐、智驾大陆、CineMaker/GateClaw 短文总结等）不再出现在侧栏；若需写入简历或答辩，请使用 `1_陈纬简历` 下简历稿或其它归档。
 
-**Agent 主线中与 OpenClaw 的衔接**见 [5.5 OpenClaw](../05_Agent开发/5.5_OpenClaw.md)。
+**OpenClaw 部署与实践**见本章 [7.2_OpenClaw-Deployment-Issues](7.2_OpenClaw-Deployment-Issues/README.md)（与 [5.2 MCP](../05_Agent开发/5.2_MCP协议.md) 等 Agent 主线对照阅读）。
