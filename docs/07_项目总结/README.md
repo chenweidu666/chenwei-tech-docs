@@ -3,7 +3,7 @@
 
 | 子目录 | 内容 | 上游 / 说明 |
 |--------|------|-------------|
-| [7.1_CineMaker/](7.1_CineMaker/1_产品工作流.md) | CineMaker 产品工作流、技术架构、提示词、火山 API 配置 | 镜像自 [CineMaker-AI-Platform](https://github.com/chenweidu666/CineMaker-AI-Platform) |
+| [7.1_CineMaker/](7.1_CineMaker/7.1.1_产品工作流.md) | CineMaker 产品工作流、技术架构、提示词、火山 API 配置 | 镜像自 [CineMaker-AI-Platform](https://github.com/chenweidu666/CineMaker-AI-Platform) |
 | [7.2_OpenClaw-Deployment-Issues/](7.2_OpenClaw-Deployment-Issues/README.md) | OpenClaw 部署、踩坑、Nginx、Workspace、Skills、安全复盘 | 镜像自 [OpenClaw-Deployment-Issues](https://github.com/chenweidu666/OpenClaw-Deployment-Issues) |
 
 **已从本站移除、不再维护的篇目**（太初 RAG、太初推理、展锐、智驾大陆、CineMaker/GateClaw 短文总结等）不再出现在侧栏；若需写入简历或答辩，请使用 `1_陈纬简历` 下简历稿或其它归档。

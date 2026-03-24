@@ -12,7 +12,7 @@
 >
 > 本仓库是一份**从零到可用的完整实战文档**：用一台绿联 DH4300+ NAS（7×24 低功耗调度中心）+ 阿里云 DashScope API（Qwen3-14B），搭建纯云端推理的私人 AI 助手；收录 **17 个典型踩坑案例、完整解决方案与最佳实践**，便于检索与复用到同类部署（NAS / ARM64 / 纯云端 API）。
 >
-> **运行状态说明**：文中「**当时 / 文档记录期末（约 2026-02-11）**」在用的模型与工具配置，指实战收尾阶段的**最终选型**；后因 Token 成本，**OpenClaw 实例已暂停运行**（详见 [安全加固与项目复盘](./docs/7_OpenClaw_Security_and_Retrospective.md) 中的时间线与功能总览 ⏸️）。操作步骤仍可按需复现，请勿将「当前使用」理解为作者至今仍在 7×24 在线服务。
+> **运行状态说明**：文中「**当时 / 文档记录期末（约 2026-02-11）**」在用的模型与工具配置，指实战收尾阶段的**最终选型**；后因 Token 成本，**OpenClaw 实例已暂停运行**（详见 [安全加固与项目复盘](./7.2.7_OpenClaw_Security_and_Retrospective.md) 中的时间线与功能总览 ⏸️）。操作步骤仍可按需复现，请勿将「当前使用」理解为作者至今仍在 7×24 在线服务。
 
 ---
 
@@ -21,16 +21,15 @@
 
 
 ```
-OpenClaw-Deployment-Issues/
+7.2_OpenClaw-Deployment-Issues/          # 技术文档站中的目录名
 ├── README.md                              # 入口：亮点、架构、快速开始、导航
-├── docs/
-│   ├── 1_OpenClaw_Deploy_Guide.md         # 环境构建与 API 配置
-│   ├── 2_OpenClaw_Pitfalls_and_Practices.md   # 踩坑 17 则 + 问答 + 最佳实践
-│   ├── 3_OpenClaw_Nginx_WebUI.md          # Nginx HTTPS Web UI
-│   ├── 4_OpenClaw_Workspace.md            # Workspace 自定义指南
-│   ├── 5_OpenClaw_Skills.md               # Skill 开发指南
-│   ├── 6_OpenClaw_Native_Tools_Plugin.md  # 原生工具插件开发
-│   └── 7_OpenClaw_Security_and_Retrospective.md  # 安全、时间线、裁剪决策、优缺点
+├── 7.2.1_OpenClaw_Deploy_Guide.md         # 环境构建与 API 配置
+├── 7.2.2_OpenClaw_Pitfalls_and_Practices.md   # 踩坑 17 则 + 问答 + 最佳实践
+├── 7.2.3_OpenClaw_Nginx_WebUI.md          # Nginx HTTPS Web UI
+├── 7.2.4_OpenClaw_Workspace.md            # Workspace 自定义指南
+├── 7.2.5_OpenClaw_Skills.md               # Skill 开发指南
+├── 7.2.6_OpenClaw_Native_Tools_Plugin.md  # 原生工具插件开发
+├── 7.2.7_OpenClaw_Security_and_Retrospective.md  # 安全、时间线、裁剪决策、优缺点
 └── images/                                # 架构图、截图等资源
 ```
 
@@ -45,10 +44,10 @@ OpenClaw-Deployment-Issues/
 - **NAS + 云端 API 架构**：绿联 NAS DH4300+（7×24 低功耗调度中心 + 5.4T 持久存储）+ 阿里云 DashScope Qwen3-14B API，轻量高效
 - **纯云端推理**：DashScope Qwen3-14B / 32B，131K 上下文窗口，当时测算极低成本（百万 token 约 ¥1.5 输入档，**以云厂商现网价目为准**），无需 GPU 硬件
 - **23 个内置工具实测**：exec / 文件读写 / heartbeat / memory / web_fetch 全部验证，含 8B vs 14B 工具调用能力对比
-- **系统提示词精简实战**：从 34 工具 → 23 工具，决策与清单见 [安全与复盘](./docs/7_OpenClaw_Security_and_Retrospective.md#系统提示词裁剪决策记录2026-02-11)（含本地 8B 阶段背景）
+- **系统提示词精简实战**：从 34 工具 → 23 工具，决策与清单见 [安全与复盘](./7.2.7_OpenClaw_Security_and_Retrospective.md#系统提示词裁剪决策记录2026-02-11)（含本地 8B 阶段背景）
 - **Docker 隔离部署**：非 root + cap_drop ALL + no-new-privileges + exec 白名单，启动自动通知飞书
 - **exec 审批系统实战**：allowlist 白名单 + safeBins + askFallback 配置，Docker 非交互模式下的踩坑与解决
-- **完整踩坑记录**：[踩坑记录与实践](./docs/2_OpenClaw_Pitfalls_and_Practices.md) 收录 17 则，按 5 大类整理（模型选型 / Skill 配置 / AI 行为 / 运维 / NAS 环境），含诊断过程与可复用方案
+- **完整踩坑记录**：[踩坑记录与实践](./7.2.2_OpenClaw_Pitfalls_and_Practices.md) 收录 17 则，按 5 大类整理（模型选型 / Skill 配置 / AI 行为 / 运维 / NAS 环境），含诊断过程与可复用方案
 - **NAS 作为主机的实践**：RK3588C ARM64 平台运行 OpenClaw + Node.js + Docker 的完整实战经验
 - **模型演进全记录**：从云端 14B → 本地 8B（vLLM）→ 回归云端 14B，完整记录各阶段的取舍与经验
 
@@ -110,10 +109,10 @@ sequenceDiagram
 # 6. 快速查找
 
 
-- **遇到问题？** → [踩坑记录与实践](./docs/2_OpenClaw_Pitfalls_and_Practices.md#踩坑记录17-个案例)（17 则 + 最佳实践表）
-- **想快速部署？** → [快速开始](#快速开始) + [环境构建与 API 配置](./docs/1_OpenClaw_Deploy_Guide.md)
+- **遇到问题？** → [踩坑记录与实践](./7.2.2_OpenClaw_Pitfalls_and_Practices.md#踩坑记录17-个案例)（17 则 + 最佳实践表）
+- **想快速部署？** → [快速开始](#快速开始) + [环境构建与 API 配置](./7.2.1_OpenClaw_Deploy_Guide.md)
 - **对比不同模型？** → [硬件清单与性能实测](#硬件清单与性能实测)
-- **安全 / 时间线 / Token 评估？** → [安全加固与项目复盘](./docs/7_OpenClaw_Security_and_Retrospective.md)
+- **安全 / 时间线 / Token 评估？** → [安全加固与项目复盘](./7.2.7_OpenClaw_Security_and_Retrospective.md)
 
 ---
 
@@ -123,13 +122,13 @@ sequenceDiagram
 
 | 序号 | 文档 | 内容概述 |
 |:----:|------|----------|
-| 1 | **[环境构建与 API 配置](./docs/1_OpenClaw_Deploy_Guide.md)** | 选型对比、硬件准备、NAS 上安装 OpenClaw、接入阿里云 Qwen3 |
-| 2 | [**踩坑记录与实践**](./docs/2_OpenClaw_Pitfalls_and_Practices.md) | 17 个踩坑（5 大类）、Workspace/Skill 问答、最佳实践速查表 |
-| 3 | [Nginx HTTPS Web UI](./docs/3_OpenClaw_Nginx_WebUI.md) | Nginx 反向代理、自签名 SSL、局域网 Web UI 访问 |
-| 4 | [Workspace 自定义指南](./docs/4_OpenClaw_Workspace.md) | SOUL.md / IDENTITY.md / TOOLS.md 定义 AI 人格与能力 + 模型选型对比 |
-| 5 | [Skill 开发指南](./docs/5_OpenClaw_Skills.md) | Skill 原理、实战案例（含 Qwen 费用监控）、3060 GPU 转写服务架构、本地 Whisper 选型分析 |
-| 6 | [**原生工具插件开发**](./docs/6_OpenClaw_Native_Tools_Plugin.md) | 自定义插件 Function Calling 原理、开发指南、踩坑总结（自定义工具已清理，保留框架） |
-| 7 | [**安全加固与项目复盘**](./docs/7_OpenClaw_Security_and_Retrospective.md) | 4 层安全、部署时间线、功能完成度、工具裁剪决策、优缺点与 Token 评估 |
+| 1 | **[环境构建与 API 配置](./7.2.1_OpenClaw_Deploy_Guide.md)** | 选型对比、硬件准备、NAS 上安装 OpenClaw、接入阿里云 Qwen3 |
+| 2 | [**踩坑记录与实践**](./7.2.2_OpenClaw_Pitfalls_and_Practices.md) | 17 个踩坑（5 大类）、Workspace/Skill 问答、最佳实践速查表 |
+| 3 | [Nginx HTTPS Web UI](./7.2.3_OpenClaw_Nginx_WebUI.md) | Nginx 反向代理、自签名 SSL、局域网 Web UI 访问 |
+| 4 | [Workspace 自定义指南](./7.2.4_OpenClaw_Workspace.md) | SOUL.md / IDENTITY.md / TOOLS.md 定义 AI 人格与能力 + 模型选型对比 |
+| 5 | [Skill 开发指南](./7.2.5_OpenClaw_Skills.md) | Skill 原理、实战案例（含 Qwen 费用监控）、3060 GPU 转写服务架构、本地 Whisper 选型分析 |
+| 6 | [**原生工具插件开发**](./7.2.6_OpenClaw_Native_Tools_Plugin.md) | 自定义插件 Function Calling 原理、开发指南、踩坑总结（自定义工具已清理，保留框架） |
+| 7 | [**安全加固与项目复盘**](./7.2.7_OpenClaw_Security_and_Retrospective.md) | 4 层安全、部署时间线、功能完成度、工具裁剪决策、优缺点与 Token 评估 |
 
 ---
 
@@ -150,7 +149,7 @@ source ~/.openclaw/env
 openclaw agent --agent main --message "你好"
 ```
 
-详细步骤见 [环境构建与 API 配置](./docs/1_OpenClaw_Deploy_Guide.md)。
+详细步骤见 [环境构建与 API 配置](./7.2.1_OpenClaw_Deploy_Guide.md)。
 
 ---
 
@@ -211,20 +210,20 @@ NAS 双卷存储，OpenClaw Docker 容器通过只读挂载访问：
 
 | 文档 | 说明 |
 |------|------|
-| [**踩坑记录与实践**](./docs/2_OpenClaw_Pitfalls_and_Practices.md) | 17 个踩坑（现象 / 原因 / 方案）、Workspace 与 Skill 问答、最佳实践速查表 |
-| [**安全加固与项目复盘**](./docs/7_OpenClaw_Security_and_Retrospective.md) | 4 层安全、部署时间线、功能完成度、工具裁剪决策、优缺点与 Token 评估 |
+| [**踩坑记录与实践**](./7.2.2_OpenClaw_Pitfalls_and_Practices.md) | 17 个踩坑（现象 / 原因 / 方案）、Workspace 与 Skill 问答、最佳实践速查表 |
+| [**安全加固与项目复盘**](./7.2.7_OpenClaw_Security_and_Retrospective.md) | 4 层安全、部署时间线、功能完成度、工具裁剪决策、优缺点与 Token 评估 |
 
 **按问题跳转（锚点在新文档内）**：
 
 | 问题 | 链接 |
 |------|------|
-| Skill 注册后 AI 仍不调用 | [坑 5](./docs/2_OpenClaw_Pitfalls_and_Practices.md#坑-5skill-有了但-ai-不调用) |
-| 系统提示过大、会话溢出 | [坑 11](./docs/2_OpenClaw_Pitfalls_and_Practices.md#坑-11系统提示过大--会话历史溢出14b-上下文崩溃) |
-| NAS SSH 不稳 | [坑 14](./docs/2_OpenClaw_Pitfalls_and_Practices.md#坑-14ssh-串联-nas-经常断连--改用-smb-挂载) |
-| ARM64 上 Node 安装失败 | [坑 15](./docs/2_OpenClaw_Pitfalls_and_Practices.md#坑-15nas-arm64-平台-nodejs-安装踩坑apt-依赖冲突--nvm-救场) |
-| Docker 读不了 NAS 目录 | [坑 16](./docs/2_OpenClaw_Pitfalls_and_Practices.md#坑-16ugos-nas-目录权限--docker-容器无法读取用户文件) |
-| Nginx WebSocket / token | [坑 3](./docs/2_OpenClaw_Pitfalls_and_Practices.md#坑-3nginx-websocket-要注入-token) |
-| 插件 / nativeSkills | [坑 12](./docs/2_OpenClaw_Pitfalls_and_Practices.md#坑-12skill-上下文依赖--自定义插件原生-function-calling) |
+| Skill 注册后 AI 仍不调用 | [坑 5](./7.2.2_OpenClaw_Pitfalls_and_Practices.md#坑-5skill-有了但-ai-不调用) |
+| 系统提示过大、会话溢出 | [坑 11](./7.2.2_OpenClaw_Pitfalls_and_Practices.md#坑-11系统提示过大--会话历史溢出14b-上下文崩溃) |
+| NAS SSH 不稳 | [坑 14](./7.2.2_OpenClaw_Pitfalls_and_Practices.md#坑-14ssh-串联-nas-经常断连--改用-smb-挂载) |
+| ARM64 上 Node 安装失败 | [坑 15](./7.2.2_OpenClaw_Pitfalls_and_Practices.md#坑-15nas-arm64-平台-nodejs-安装踩坑apt-依赖冲突--nvm-救场) |
+| Docker 读不了 NAS 目录 | [坑 16](./7.2.2_OpenClaw_Pitfalls_and_Practices.md#坑-16ugos-nas-目录权限--docker-容器无法读取用户文件) |
+| Nginx WebSocket / token | [坑 3](./7.2.2_OpenClaw_Pitfalls_and_Practices.md#坑-3nginx-websocket-要注入-token) |
+| 插件 / nativeSkills | [坑 12](./7.2.2_OpenClaw_Pitfalls_and_Practices.md#坑-12skill-上下文依赖--自定义插件原生-function-calling) |
 
 ---
 
@@ -247,6 +246,6 @@ NAS 双卷存储，OpenClaw Docker 容器通过只读挂载访问：
 
 > **实战记录撰写期**：2026 年 2 月 8 ~ 11 日（部署与踩坑原文档成稿区间）
 >
-> **文档最近修订**：2026 年 3 月 23 日 — README 改为入口页；踩坑与实践迁至 [`docs/2`](./docs/2_OpenClaw_Pitfalls_and_Practices.md)，安全与复盘迁至 [`docs/7`](./docs/7_OpenClaw_Security_and_Retrospective.md)；统一「暂停前最终选型」、Docker 表述、Skill 名单脚注、价目时效与交叉链接。
+> **文档最近修订**：2026 年 3 月 23 日 — README 改为入口页；分篇文件名与站点侧栏对齐为 **7.2.1**～**7.2.7**；踩坑与实践见 [7.2.2](./7.2.2_OpenClaw_Pitfalls_and_Practices.md)，安全与复盘见 [7.2.7](./7.2.7_OpenClaw_Security_and_Retrospective.md)；统一「暂停前最终选型」、Docker 表述、Skill 名单脚注、价目时效与交叉链接。
 >
 > 如有问题欢迎评论交流！
