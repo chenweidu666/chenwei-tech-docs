@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 """
-从 GitHub 仅拉取 Markdown 文档到 06_开源项目文档/（不克隆代码）。
-公开仓：API 列树 + raw.githubusercontent.com 下载。
+从 GitHub 仅拉取 Markdown 到 docs/projects/（不克隆代码）。
+当前仅同步两个公开仓：
+  - CineMaker-AI-Platform：根 README + docs/guides/
+  - OpenClaw-Deployment-Issues：根 README + docs/
 """
 from __future__ import annotations
 
 import json
-import subprocess
 import sys
 import time
 import urllib.error
@@ -14,7 +15,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "06_开源项目文档"
+OUT = ROOT / "docs" / "projects"
 OWNER = "chenweidu666"
 BRANCH = "main"
 UA = "chenwei-tech-docs-fetch/1.0"
@@ -51,9 +52,6 @@ def raw_url(repo: str, path: str, branch: str = BRANCH) -> str:
 def should_skip_path(path: str) -> bool:
     if path in ("CHANGELOG.md", "CODE_OF_CONDUCT.md", "CONTRIBUTING.md"):
         return True
-    # 示例剧集正文，体积大且偏内容非工程文档
-    if "docs/剧本/AI女性Vlog/剧本/EP" in path and path.endswith(".md"):
-        return True
     return False
 
 
@@ -75,7 +73,6 @@ def sync_md_tree(
 ) -> int:
     """下载仓库内 .md；path_prefixes 非空时只保留 README 或给定目录下文件。"""
     n = 0
-    base = OUT / dest_name
     for item in tree(OWNER, repo):
         if item.get("type") != "blob":
             continue
@@ -87,7 +84,7 @@ def sync_md_tree(
         if path_prefixes and not _match_prefixes(path, path_prefixes):
             continue
         url = raw_url(repo, path)
-        target = base / path
+        target = OUT / dest_name / path
         target.parent.mkdir(parents=True, exist_ok=True)
         for attempt in range(3):
             try:
@@ -112,89 +109,30 @@ def sync_md_tree(
     return n
 
 
-def sync_openclaw_style(repo: str, dest_name: str) -> int:
-    """README + docs/*.md"""
-    return sync_md_tree(
-        repo,
-        dest_name,
-        path_prefixes=("README.md", "docs"),
-    )
-
-
-def sync_cinemaker() -> int:
-    """CineMaker-AI-Platform：根 README + docs 下全部 md（排除示例单集剧本）。"""
+def sync_cinemaker_guides() -> int:
+    """CineMaker-AI-Platform：根 README + docs/guides/（与线上一致）。"""
     return sync_md_tree(
         "CineMaker-AI-Platform",
         "CineMaker-AI-Platform",
-        path_prefixes=("README.md", "docs"),
+        path_prefixes=("README.md", "docs/guides"),
     )
 
 
-def fetch_private_readme(repo: str, dest_name: str) -> bool:
-    """gh api …/readme raw；失败则跳过。"""
-    base = OUT / dest_name
-    base.mkdir(parents=True, exist_ok=True)
-    try:
-        p = subprocess.run(
-            [
-                "gh",
-                "api",
-                f"repos/{OWNER}/{repo}/readme",
-                "-H",
-                "Accept: application/vnd.github.raw",
-            ],
-            capture_output=True,
-            timeout=60,
-        )
-        if p.returncode != 0:
-            print(f"SKIP private {repo}: gh exit {p.returncode}", file=sys.stderr)
-            return False
-        text = p.stdout.decode("utf-8", errors="replace")
-        note = f"<!-- README 同步自私有仓库 {repo}（仅首页说明，代码未包含） -->\n\n"
-        (base / "README_仓库首页.md").write_text(note + text, encoding="utf-8")
-        print(f"OK private README {repo}")
-        return True
-    except FileNotFoundError:
-        print("SKIP: gh not installed", file=sys.stderr)
-        return False
-    except Exception as e:
-        print(f"SKIP private {repo}: {e}", file=sys.stderr)
-        return False
+def sync_openclaw() -> int:
+    """OpenClaw-Deployment-Issues：README + docs/*.md"""
+    return sync_md_tree(
+        "OpenClaw-Deployment-Issues",
+        "OpenClaw-Deployment-Issues",
+        path_prefixes=("README.md", "docs"),
+    )
 
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     total = 0
-    total += sync_cinemaker()
-    total += sync_openclaw_style("OpenClaw-Deployment-Issues", "OpenClaw-Deployment-Issues")
-    total += sync_md_tree("Smart-Wardrobe-Web", "Smart-Wardrobe-Web", path_prefixes=("README.md", "docs"))
-    total += sync_md_tree(
-        "IOT-Arduino-BodyWeightMonitor",
-        "IOT-Arduino-BodyWeightMonitor",
-        path_prefixes=("README.md",),
-    )
-
-    priv = [
-        "CineMaker-Core",
-        "GateClaw-Bot",
-        "Agent-Monitor-Dashboard",
-        "Dify-Workflow-Project",
-        "Single-Agent-Lab",
-        "Eye-Vision-Agent",
-        "ComfyUI-Image-Agent",
-        "ComfyUI-Workflow-Agent",
-        "Picture-Generation-Agent",
-        "Android-Automation-Agent",
-        "QA-Dataset-Generator",
-        "LoRA-Finetune-Lab",
-        "Subtitle-SFT-Dataset",
-        "AI-Content-Generator",
-        "SD-Picture-Generator",
-    ]
-    for repo in priv:
-        fetch_private_readme(repo, f"_私有仓库README/{repo}")
-
-    print(f"\n公开 Markdown 文件合计拉取约 {total} 个（含覆盖）。")
+    total += sync_cinemaker_guides()
+    total += sync_openclaw()
+    print(f"\nMarkdown 合计拉取约 {total} 个（含覆盖）。")
 
 
 if __name__ == "__main__":

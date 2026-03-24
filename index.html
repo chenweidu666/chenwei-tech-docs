@@ -141,6 +141,7 @@
     window.$docsify = {
       name: "⚡ 陈纬 · 技术文档",
       repo: "chenweidu666/chenwei-tech-docs",
+      homepage: "docs/README.md",
       loadSidebar: true,
       subMaxLevel: 3,
       auto2top: true,
@@ -151,7 +152,13 @@
         crossChapter: true,
       },
       search: {
-        paths: "auto",
+        paths: [
+          "docs/README.md",
+          "docs/projects/CineMaker-AI-Platform/README.md",
+          "docs/projects/CineMaker-AI-Platform/docs/guides/",
+          "docs/projects/OpenClaw-Deployment-Issues/README.md",
+          "docs/projects/OpenClaw-Deployment-Issues/docs/",
+        ],
         placeholder: "🔍 搜索文档…",
         noData: "没有找到相关内容",
         depth: 4,

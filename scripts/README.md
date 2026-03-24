@@ -1,17 +1,16 @@
 # 站点维护（GitHub Pages / Docsify）
 
-本站根目录即 **`3_技术文档`**，与日常写作目录一致，**不再**使用外层单独拷贝目录。
+本站根目录即 **`3_技术文档`**。
 
-侧栏与搜索**不包含** `github文档仓库/`（已迁至 `1_陈纬简历/归档/github文档快照/`）、**不包含** `99_面试与学习资源/`（已迁至 `1_陈纬简历/归档/99_面试与学习资源/`）；`gen_sidebar.py` 的 `SKIP_DIRS` 已包含二者。
+- **拉取**：`fetch_github_docs.py` 仅同步 **CineMaker-AI-Platform**（`README` + `docs/guides`）与 **OpenClaw-Deployment-Issues**（`README` + `docs/`），写入 `docs/projects/`。
+- **侧栏**：`gen_sidebar.py` 仅将上述路径写入 `_sidebar.md`；`docs/01_`～`05_` 等不参与侧栏。
 
-**从 GitHub 拉取公开/私有 README 文档镜像**（不克隆代码）：
+**从 GitHub 拉取镜像**（不克隆代码）：
 
 ```bash
 python3 scripts/fetch_github_docs.py
 bash scripts/regen_sidebar.sh
 ```
-
-依赖：`gh` CLI（用于私有仓 README）；仅公开仓时可不用。
 
 新增或重命名 `.md` 后，刷新左侧导航：
 
