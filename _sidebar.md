@@ -65,6 +65,7 @@
 ---
 
 * **八、OpenClaw 实战系列** 🦞
+  * [8.0 本章说明与索引](docs/08_OpenClaw 实战/README.md)
   * [8.1 Dashboard 部署与移动端优化](docs/08_OpenClaw 实战/01_Dashboard 部署与移动端优化.md)
   * [8.2 双龙虾架构设计与实现](docs/08_OpenClaw 实战/02_双龙虾架构设计与实现.md)
   * [8.3 Git 记忆同步机制详解](docs/08_OpenClaw 实战/03_Git 记忆同步机制详解.md)
