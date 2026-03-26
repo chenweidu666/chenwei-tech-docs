@@ -1,5 +1,4 @@
 <div style="text-align: center; font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;"><strong>Gate 交易所 MCP 集成</strong></div>
-
 > 2026-03-25 | 🦞 双龙虾架构实战系列第 5 篇
 
 ---
@@ -575,4 +574,3 @@ mcporter call gate.cex_wallet_get_total_balance
 ---
 
 *本文档由 里斯本 🦞 自动记录 | Powered by OpenClaw + Claude*
-

@@ -1,5 +1,4 @@
 <div style="text-align: center; font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;"><strong>OpenClaw 本地部署指南</strong></div>
-
 > 2026-03-25 | 🦞 双龙虾架构实战系列第 4 篇
 
 ---
@@ -603,4 +602,3 @@ openclaw gateway restart
 ---
 
 *本文档由 里斯本 🦞 自动记录 | Powered by OpenClaw + Claude*
-

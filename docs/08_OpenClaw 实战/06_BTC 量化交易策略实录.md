@@ -1,5 +1,4 @@
 <div style="text-align: center; font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;"><strong>BTC 量化交易策略实录</strong></div>
-
 > 2026-03-25 | 🦞 双龙虾架构实战系列第 6 篇
 
 ---
@@ -464,4 +463,3 @@ fi
 ---
 
 *本文档由 里斯本 🦞 自动记录 | Powered by OpenClaw + Claude*
-

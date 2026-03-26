@@ -1,5 +1,4 @@
 <div style="text-align: center; font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;"><strong>OpenClaw 实战系列</strong></div>
-
 > 📅 创建时间：2026-03-25 | 🦞 双龙虾架构实战文档
 
 ---

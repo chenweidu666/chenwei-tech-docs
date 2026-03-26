@@ -1,5 +1,4 @@
 <div style="text-align: center; font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;"><strong>Git 记忆同步机制详解</strong></div>
-
 > 2026-03-25 | 🦞 双龙虾架构实战系列第 3 篇
 
 ---
@@ -534,4 +533,3 @@ const syncStatus = {
 ---
 
 *本文档由 里斯本 🦞 自动记录 | Powered by OpenClaw + Claude*
-

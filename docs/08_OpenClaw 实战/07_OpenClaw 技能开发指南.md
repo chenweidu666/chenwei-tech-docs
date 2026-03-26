@@ -1,5 +1,4 @@
 <div style="text-align: center; font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem;"><strong>OpenClaw 技能开发指南</strong></div>
-
 > 2026-03-25 | 🦞 双龙虾架构实战系列第 7 篇
 
 ---
@@ -664,4 +663,3 @@ async function listIssues(token) {
 ---
 
 *本文档由 里斯本 🦞 自动记录 | Powered by OpenClaw + Claude*
-
