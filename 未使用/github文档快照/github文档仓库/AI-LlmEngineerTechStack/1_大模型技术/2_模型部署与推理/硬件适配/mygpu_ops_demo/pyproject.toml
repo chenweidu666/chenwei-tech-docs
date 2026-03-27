@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mygpu-ops-demo"
+version = "0.1.0"
+description = "模拟国产GPU算子库与vLLM CustomOp集成演示"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "Apache-2.0"}
+authors = [
+    {name = "MyGPU Team", email = "demo@mygpu.ai"},
+]
+keywords = ["vllm", "gpu", "custom-op", "deep-learning"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+dependencies = [
+    "torch>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "mypy",
+]
+
+[project.entry-points."vllm.platform"]
+mygpu = "vllm_plugin:MyGPUPlatform"
+
+[project.urls]
+Homepage = "https://github.com/example/mygpu-ops-demo"
+Documentation = "https://github.com/example/mygpu-ops-demo#readme"
+Repository = "https://github.com/example/mygpu-ops-demo"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["mygpu_ops*", "vllm_plugin*"]
+
+[tool.black]
+line-length = 100
+target-version = ["py38", "py39", "py310", "py311"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

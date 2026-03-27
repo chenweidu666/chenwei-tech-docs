@@ -1,0 +1,2301 @@
+# 国产 GPU 适配 vLLM 完整指南
+
+> 本文档详细介绍如何将拥有自研算子库的国产 GPU 适配到 vLLM 推理框架，实现大模型在国产硬件上的高效推理。
+
+---
+
+## 目录
+
+1. [适配架构概览](#1-适配架构概览)
+2. [vLLM Platform Plugin 系统](#2-vllm-platform-plugin-系统)
+3. [适配步骤详解](#3-适配步骤详解)
+4. [核心组件实现](#4-核心组件实现)
+5. [算子适配与注册](#5-算子适配与注册)
+6. [内存管理适配](#6-内存管理适配)
+7. [分布式通信适配](#7-分布式通信适配)
+8. [性能优化](#8-性能优化)
+9. [调试与问题排查](#9-调试与问题排查)
+10. [完整示例代码](#10-完整示例代码)
+
+---
+
+## 1. 适配架构概览
+
+### 1.1 整体架构图
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           用户应用层                                      │
+│                    (Python API / OpenAI API)                            │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           vLLM 框架层                                     │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                   │
+│  │   Scheduler  │  │   Executor   │  │  KV Cache    │                   │
+│  │   调度器     │  │   执行器     │  │  Manager     │                   │
+│  └──────────────┘  └──────────────┘  └──────────────┘                   │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      Platform Plugin 层 (适配重点)                        │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐ │
+│  │   Platform   │  │   Worker     │  │ ModelRunner  │  │  Attention   │ │
+│  │   平台定义   │  │   工作进程   │  │  模型运行器  │  │   Backend    │ │
+│  └──────────────┘  └──────────────┘  └──────────────┘  └──────────────┘ │
+│  ┌──────────────┐  ┌──────────────┐                                     │
+│  │  CustomOp    │  │    Device    │                                     │
+│  │  自定义算子  │  │ Communicator │                                     │
+│  └──────────────┘  └──────────────┘                                     │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         PyTorch Backend 层                               │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                   │
+│  │  torch.compile│  │  Dispatcher  │  │  Allocator   │                   │
+│  │  编译后端    │  │  算子分发    │  │  内存分配    │                   │
+│  └──────────────┘  └──────────────┘  └──────────────┘                   │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         国产 GPU 软件栈                                   │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐                   │
+│  │   Runtime    │  │   算子库     │  │   Driver     │                   │
+│  │   运行时     │  │  (自研)      │  │   驱动       │                   │
+│  └──────────────┘  └──────────────┘  └──────────────┘                   │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           国产 GPU 硬件                                   │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1.2 适配工作量分布
+
+| 模块 | 工作量 | 难度 | 说明 |
+|------|--------|------|------|
+| Platform 定义 | 10% | ⭐⭐ | 基础框架搭建 |
+| 算子适配 | 40% | ⭐⭐⭐⭐ | 核心工作，调用自研算子库 |
+| Attention Backend | 25% | ⭐⭐⭐⭐⭐ | PagedAttention 实现 |
+| 内存管理 | 15% | ⭐⭐⭐ | Block 分配与 KV Cache |
+| 分布式通信 | 10% | ⭐⭐⭐ | 多卡并行支持 |
+
+---
+
+## 2. vLLM Platform Plugin 系统
+
+### 2.1 Plugin 系统架构
+
+vLLM 2.0+ 引入了 Platform Plugin 系统，允许第三方硬件厂商通过插件方式接入，无需修改 vLLM 核心代码。
+
+```python
+# vLLM Platform Plugin 核心接口
+from vllm.platforms import PlatformBase
+
+class PlatformBase:
+    """平台基类，所有自定义平台必须继承"""
+    
+    device_name: str              # 设备名称标识
+    device_type: str              # 设备类型
+    dispatch_key: str             # PyTorch Dispatcher key
+    
+    @classmethod
+    def get_device_capability(cls) -> Tuple[int, int]:
+        """获取设备计算能力"""
+        raise NotImplementedError
+    
+    @classmethod
+    def get_device_name(cls, device_id: int = 0) -> str:
+        """获取设备名称"""
+        raise NotImplementedError
+    
+    @classmethod
+    def is_available(cls) -> bool:
+        """检查设备是否可用"""
+        raise NotImplementedError
+    
+    @classmethod
+    def get_device_total_memory(cls, device_id: int = 0) -> int:
+        """获取设备总显存（字节）"""
+        raise NotImplementedError
+```
+
+### 2.2 Plugin 注册机制
+
+```python
+# 通过 entry_points 注册插件
+# setup.py 或 pyproject.toml
+
+# pyproject.toml 方式
+[project.entry-points."vllm.platform"]
+my_gpu = "my_gpu_plugin:MyGPUPlatform"
+
+# setup.py 方式
+setup(
+    name="vllm-my-gpu",
+    entry_points={
+        "vllm.platform": [
+            "my_gpu = my_gpu_plugin:MyGPUPlatform",
+        ],
+    },
+)
+```
+
+---
+
+## 3. 适配步骤详解
+
+### 3.1 项目结构
+
+```
+vllm-mygpu-plugin/
+├── pyproject.toml              # 包配置
+├── setup.py                    # 安装脚本
+├── README.md
+├── my_gpu_plugin/
+│   ├── __init__.py
+│   ├── platform.py             # 平台定义
+│   ├── worker.py               # Worker 实现
+│   ├── model_runner.py         # ModelRunner
+│   ├── attention/
+│   │   ├── __init__.py
+│   │   └── backend.py          # Attention Backend
+│   ├── ops/
+│   │   ├── __init__.py
+│   │   ├── attention.py        # Attention 算子
+│   │   ├── layernorm.py        # LayerNorm 算子
+│   │   ├── rotary_embedding.py # RoPE 算子
+│   │   └── ...
+│   ├── distributed/
+│   │   ├── __init__.py
+│   │   └── communicator.py     # 通信实现
+│   └── csrc/                   # C++/Kernel 源码
+│       ├── attention_kernels.cpp
+│       └── ...
+└── tests/
+    └── ...
+```
+
+### 3.2 适配流程图
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 1: 实现 Platform 类                                         │
+│ └── 定义设备属性、检测接口                                        │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 2: 实现 CustomOp                                            │
+│ └── 包装自研算子库，注册到 PyTorch                                │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 3: 实现 Attention Backend                                   │
+│ └── PagedAttention / Flash Attention 适配                        │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 4: 实现 Worker & ModelRunner                                │
+│ └── 模型加载、执行流程                                            │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 5: 实现 DeviceCommunicator                                  │
+│ └── 多卡通信（可选）                                              │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│ Step 6: 性能优化 & 测试                                          │
+│ └── Benchmark、Profile、调优                                      │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 4. 核心组件实现
+
+### 4.1 Platform 类实现
+
+```python
+# my_gpu_plugin/platform.py
+
+from typing import Tuple, Optional
+import torch
+
+from vllm.platforms import PlatformBase
+
+# 假设国产GPU的Python绑定库
+import mygpu  # 国产GPU的runtime库
+
+
+class MyGPUPlatform(PlatformBase):
+    """国产GPU平台实现"""
+    
+    device_name = "mygpu"
+    device_type = "mygpu"
+    dispatch_key = "PrivateUse1"  # PyTorch 自定义设备 key
+    
+    @classmethod
+    def get_device_capability(cls, device_id: int = 0) -> Tuple[int, int]:
+        """
+        返回设备计算能力
+        这个值用于判断是否支持某些特性（如 Flash Attention）
+        可以根据自研GPU能力返回一个合理的值
+        """
+        # 假设自研GPU支持类似 SM80 的能力
+        return (8, 0)
+    
+    @classmethod
+    def get_device_name(cls, device_id: int = 0) -> str:
+        """获取设备名称"""
+        return mygpu.get_device_name(device_id)
+    
+    @classmethod
+    def is_available(cls) -> bool:
+        """检查设备是否可用"""
+        try:
+            return mygpu.is_available() and mygpu.device_count() > 0
+        except Exception:
+            return False
+    
+    @classmethod
+    def get_device_total_memory(cls, device_id: int = 0) -> int:
+        """获取设备总显存（字节）"""
+        return mygpu.get_device_properties(device_id).total_memory
+    
+    @classmethod
+    def get_current_memory_usage(cls, device_id: int = 0) -> int:
+        """获取当前显存使用量"""
+        return mygpu.memory_allocated(device_id)
+    
+    @classmethod
+    def empty_cache(cls) -> None:
+        """清空缓存"""
+        mygpu.empty_cache()
+    
+    @classmethod
+    def synchronize(cls, device_id: int = 0) -> None:
+        """同步设备"""
+        mygpu.synchronize(device_id)
+    
+    @classmethod
+    def set_device(cls, device_id: int) -> None:
+        """设置当前设备"""
+        mygpu.set_device(device_id)
+    
+    @classmethod
+    def current_device(cls) -> int:
+        """获取当前设备ID"""
+        return mygpu.current_device()
+    
+    @classmethod
+    def device_count(cls) -> int:
+        """获取设备数量"""
+        return mygpu.device_count()
+
+
+# 注册 PyTorch 自定义设备
+def _register_pytorch_device():
+    """
+    将自研GPU注册为PyTorch的自定义设备
+    使得可以使用 torch.device("mygpu") 
+    """
+    # PyTorch PrivateUse1 设备注册
+    torch.utils.rename_privateuse1_backend("mygpu")
+    
+    # 注册设备相关钩子
+    torch._register_device_module("mygpu", mygpu)
+
+
+# 模块加载时自动注册
+_register_pytorch_device()
+```
+
+### 4.2 Worker 实现
+
+```python
+# my_gpu_plugin/worker.py
+
+from typing import List, Optional, Tuple
+import torch
+
+from vllm.worker.worker_base import WorkerBase, LoRARequest
+from vllm.sequence import SequenceGroupMetadata
+from vllm.config import (
+    CacheConfig,
+    DeviceConfig,
+    LoadConfig,
+    LoRAConfig,
+    ModelConfig,
+    ParallelConfig,
+    SchedulerConfig,
+)
+
+from .platform import MyGPUPlatform
+from .model_runner import MyGPUModelRunner
+
+import mygpu
+
+
+class MyGPUWorker(WorkerBase):
+    """国产GPU Worker实现"""
+    
+    def __init__(
+        self,
+        model_config: ModelConfig,
+        parallel_config: ParallelConfig,
+        scheduler_config: SchedulerConfig,
+        device_config: DeviceConfig,
+        cache_config: CacheConfig,
+        load_config: LoadConfig,
+        local_rank: int,
+        rank: int,
+        distributed_init_method: str,
+        lora_config: Optional[LoRAConfig] = None,
+        is_driver_worker: bool = False,
+    ):
+        self.model_config = model_config
+        self.parallel_config = parallel_config
+        self.scheduler_config = scheduler_config
+        self.device_config = device_config
+        self.cache_config = cache_config
+        self.load_config = load_config
+        self.local_rank = local_rank
+        self.rank = rank
+        self.distributed_init_method = distributed_init_method
+        self.lora_config = lora_config
+        self.is_driver_worker = is_driver_worker
+        
+        self.model_runner: Optional[MyGPUModelRunner] = None
+        self.device = torch.device(f"mygpu:{local_rank}")
+    
+    def init_device(self) -> None:
+        """初始化设备"""
+        # 设置当前设备
+        MyGPUPlatform.set_device(self.local_rank)
+        
+        # 初始化分布式（如果需要）
+        if self.parallel_config.world_size > 1:
+            self._init_distributed()
+        
+        # 设置随机种子
+        torch.manual_seed(self.model_config.seed)
+        mygpu.manual_seed(self.model_config.seed)
+    
+    def _init_distributed(self) -> None:
+        """初始化分布式环境"""
+        import torch.distributed as dist
+        
+        # 使用自定义后端或 gloo
+        if not dist.is_initialized():
+            dist.init_process_group(
+                backend="gloo",  # 或自研通信后端
+                init_method=self.distributed_init_method,
+                world_size=self.parallel_config.world_size,
+                rank=self.rank,
+            )
+    
+    def load_model(self) -> None:
+        """加载模型"""
+        self.model_runner = MyGPUModelRunner(
+            model_config=self.model_config,
+            parallel_config=self.parallel_config,
+            scheduler_config=self.scheduler_config,
+            device_config=self.device_config,
+            cache_config=self.cache_config,
+            load_config=self.load_config,
+            lora_config=self.lora_config,
+        )
+        self.model_runner.load_model()
+    
+    def determine_num_available_blocks(self) -> Tuple[int, int]:
+        """计算可用的KV Cache块数量"""
+        # 获取总显存和已用显存
+        total_memory = MyGPUPlatform.get_device_total_memory(self.local_rank)
+        used_memory = MyGPUPlatform.get_current_memory_usage(self.local_rank)
+        
+        # 计算可用显存
+        available_memory = total_memory - used_memory
+        
+        # 根据配置计算用于KV Cache的显存
+        cache_memory = available_memory * self.cache_config.gpu_memory_utilization
+        
+        # 计算块大小和数量
+        block_size = self.cache_config.block_size
+        num_layers = self.model_config.get_num_layers(self.parallel_config)
+        num_heads = self.model_config.get_num_kv_heads(self.parallel_config)
+        head_size = self.model_config.get_head_size()
+        
+        # 每个块的显存占用
+        # KV Cache: 2 (K和V) * num_layers * block_size * num_heads * head_size * dtype_size
+        dtype_size = 2  # float16
+        block_memory = 2 * num_layers * block_size * num_heads * head_size * dtype_size
+        
+        num_gpu_blocks = int(cache_memory // block_memory)
+        num_cpu_blocks = 0  # 暂不支持CPU offload
+        
+        return num_gpu_blocks, num_cpu_blocks
+    
+    def initialize_cache(
+        self,
+        num_gpu_blocks: int,
+        num_cpu_blocks: int,
+    ) -> None:
+        """初始化KV Cache"""
+        self.model_runner.initialize_cache(num_gpu_blocks, num_cpu_blocks)
+    
+    def execute_model(
+        self,
+        seq_group_metadata_list: List[SequenceGroupMetadata],
+        blocks_to_swap_in: Optional[dict] = None,
+        blocks_to_swap_out: Optional[dict] = None,
+        blocks_to_copy: Optional[dict] = None,
+    ):
+        """执行模型推理"""
+        return self.model_runner.execute_model(
+            seq_group_metadata_list=seq_group_metadata_list,
+            blocks_to_swap_in=blocks_to_swap_in or {},
+            blocks_to_swap_out=blocks_to_swap_out or {},
+            blocks_to_copy=blocks_to_copy or {},
+        )
+```
+
+### 4.3 ModelRunner 实现
+
+```python
+# my_gpu_plugin/model_runner.py
+
+from typing import List, Optional, Dict, Any
+import torch
+import torch.nn as nn
+
+from vllm.model_executor.model_loader import get_model
+from vllm.sequence import SequenceGroupMetadata, SamplerOutput
+from vllm.config import (
+    CacheConfig,
+    DeviceConfig,
+    LoadConfig,
+    LoRAConfig,
+    ModelConfig,
+    ParallelConfig,
+    SchedulerConfig,
+)
+
+from .attention.backend import MyGPUAttentionBackend
+from .platform import MyGPUPlatform
+
+import mygpu
+
+
+class MyGPUModelRunner:
+    """国产GPU模型运行器"""
+    
+    def __init__(
+        self,
+        model_config: ModelConfig,
+        parallel_config: ParallelConfig,
+        scheduler_config: SchedulerConfig,
+        device_config: DeviceConfig,
+        cache_config: CacheConfig,
+        load_config: LoadConfig,
+        lora_config: Optional[LoRAConfig] = None,
+    ):
+        self.model_config = model_config
+        self.parallel_config = parallel_config
+        self.scheduler_config = scheduler_config
+        self.device_config = device_config
+        self.cache_config = cache_config
+        self.load_config = load_config
+        self.lora_config = lora_config
+        
+        self.model: Optional[nn.Module] = None
+        self.gpu_cache: List[torch.Tensor] = []
+        
+        # 初始化 Attention Backend
+        self.attn_backend = MyGPUAttentionBackend(
+            num_heads=model_config.get_num_attention_heads(parallel_config),
+            head_size=model_config.get_head_size(),
+            scale=model_config.get_head_size() ** -0.5,
+            num_kv_heads=model_config.get_num_kv_heads(parallel_config),
+            dtype=model_config.dtype,
+        )
+    
+    def load_model(self) -> None:
+        """加载模型到国产GPU"""
+        device = torch.device(f"mygpu:{MyGPUPlatform.current_device()}")
+        
+        # 加载模型
+        self.model = get_model(
+            model_config=self.model_config,
+            load_config=self.load_config,
+            device_config=self.device_config,
+            parallel_config=self.parallel_config,
+            scheduler_config=self.scheduler_config,
+            lora_config=self.lora_config,
+        )
+        
+        # 移动模型到设备
+        self.model = self.model.to(device)
+        self.model.eval()
+        
+        # 设置为推理模式
+        torch.set_grad_enabled(False)
+    
+    def initialize_cache(
+        self,
+        num_gpu_blocks: int,
+        num_cpu_blocks: int,
+    ) -> None:
+        """初始化KV Cache"""
+        device = torch.device(f"mygpu:{MyGPUPlatform.current_device()}")
+        
+        num_layers = self.model_config.get_num_layers(self.parallel_config)
+        num_heads = self.model_config.get_num_kv_heads(self.parallel_config)
+        head_size = self.model_config.get_head_size()
+        block_size = self.cache_config.block_size
+        
+        # 分配 KV Cache
+        # Shape: [num_blocks, block_size, num_heads, head_size]
+        self.gpu_cache = []
+        for _ in range(num_layers):
+            # Key cache
+            key_cache = torch.zeros(
+                (num_gpu_blocks, block_size, num_heads, head_size),
+                dtype=self.model_config.dtype,
+                device=device,
+            )
+            # Value cache
+            value_cache = torch.zeros(
+                (num_gpu_blocks, block_size, num_heads, head_size),
+                dtype=self.model_config.dtype,
+                device=device,
+            )
+            self.gpu_cache.append((key_cache, value_cache))
+    
+    def execute_model(
+        self,
+        seq_group_metadata_list: List[SequenceGroupMetadata],
+        blocks_to_swap_in: Dict[int, int],
+        blocks_to_swap_out: Dict[int, int],
+        blocks_to_copy: Dict[int, List[int]],
+    ) -> List[SamplerOutput]:
+        """执行模型推理"""
+        
+        # 处理 swap 和 copy 操作
+        self._swap_in(blocks_to_swap_in)
+        self._swap_out(blocks_to_swap_out)
+        self._copy_blocks(blocks_to_copy)
+        
+        # 准备输入
+        input_tokens, input_positions, input_metadata = self._prepare_inputs(
+            seq_group_metadata_list
+        )
+        
+        # 执行前向传播
+        with torch.no_grad():
+            hidden_states = self.model(
+                input_ids=input_tokens,
+                positions=input_positions,
+                kv_caches=self.gpu_cache,
+                attn_metadata=input_metadata,
+            )
+        
+        # 采样
+        output = self._sample(hidden_states, seq_group_metadata_list)
+        
+        return output
+    
+    def _prepare_inputs(
+        self,
+        seq_group_metadata_list: List[SequenceGroupMetadata],
+    ):
+        """准备模型输入"""
+        # 这里需要根据 seq_group_metadata_list 构建：
+        # - input_tokens: 输入token ids
+        # - input_positions: 位置编码
+        # - input_metadata: Attention 元数据（block tables等）
+        
+        # 简化实现，实际需要处理 prefill 和 decode 两种情况
+        input_tokens = []
+        input_positions = []
+        slot_mapping = []
+        block_tables = []
+        
+        for seq_group in seq_group_metadata_list:
+            for seq_id, seq_data in seq_group.seq_data.items():
+                if seq_group.is_prompt:
+                    # Prefill 阶段
+                    tokens = seq_data.get_token_ids()
+                    positions = list(range(len(tokens)))
+                else:
+                    # Decode 阶段
+                    tokens = [seq_data.get_last_token_id()]
+                    positions = [seq_data.get_len() - 1]
+                
+                input_tokens.extend(tokens)
+                input_positions.extend(positions)
+                
+                # 获取 block table
+                block_table = seq_group.block_tables[seq_id]
+                block_tables.append(block_table)
+        
+        device = torch.device(f"mygpu:{MyGPUPlatform.current_device()}")
+        
+        input_tokens = torch.tensor(input_tokens, dtype=torch.long, device=device)
+        input_positions = torch.tensor(input_positions, dtype=torch.long, device=device)
+        
+        # 构建 attention metadata
+        input_metadata = self.attn_backend.make_metadata(
+            is_prompt=seq_group_metadata_list[0].is_prompt if seq_group_metadata_list else False,
+            slot_mapping=slot_mapping,
+            block_tables=block_tables,
+            seq_lens=[sg.seq_data[list(sg.seq_data.keys())[0]].get_len() 
+                      for sg in seq_group_metadata_list],
+        )
+        
+        return input_tokens, input_positions, input_metadata
+    
+    def _sample(
+        self,
+        hidden_states: torch.Tensor,
+        seq_group_metadata_list: List[SequenceGroupMetadata],
+    ) -> List[SamplerOutput]:
+        """从模型输出采样"""
+        # 实际的采样逻辑
+        # 这里简化处理
+        pass
+    
+    def _swap_in(self, blocks_to_swap_in: Dict[int, int]) -> None:
+        """将块从CPU换入GPU"""
+        pass
+    
+    def _swap_out(self, blocks_to_swap_out: Dict[int, int]) -> None:
+        """将块从GPU换出到CPU"""
+        pass
+    
+    def _copy_blocks(self, blocks_to_copy: Dict[int, List[int]]) -> None:
+        """复制块"""
+        for src_block, dst_blocks in blocks_to_copy.items():
+            for layer_idx, (key_cache, value_cache) in enumerate(self.gpu_cache):
+                for dst_block in dst_blocks:
+                    key_cache[dst_block].copy_(key_cache[src_block])
+                    value_cache[dst_block].copy_(value_cache[src_block])
+```
+
+---
+
+## 5. 算子适配与注册
+
+### 5.1 算子适配策略
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                       算子适配策略                               │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐         │
+│  │  自研算子库  │ → │  PyTorch    │ → │   vLLM     │         │
+│  │  Kernel     │    │  CustomOp   │    │  调用      │         │
+│  └─────────────┘    └─────────────┘    └─────────────┘         │
+│                                                                 │
+│  适配方式：                                                      │
+│  1. forward_oot: 在PyTorch外部调用自研kernel                      │
+│  2. 通过 torch.library 注册自定义算子                             │
+│  3. 使用 cpp_extension 编译 C++ binding                          │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 5.2 CustomOp 基类实现
+
+```python
+# my_gpu_plugin/ops/base.py
+
+from typing import Optional, List, Tuple
+import torch
+
+from vllm.model_executor.layers.ops import CustomOp
+
+# 导入自研算子库
+import mygpu_ops  # 国产GPU算子库
+
+
+class MyGPUCustomOp(CustomOp):
+    """国产GPU自定义算子基类"""
+    
+    @classmethod
+    def is_supported(cls) -> bool:
+        """检查是否支持当前设备"""
+        try:
+            import mygpu
+            return mygpu.is_available()
+        except ImportError:
+            return False
+    
+    def forward_native(
+        self,
+        *args,
+        **kwargs,
+    ):
+        """PyTorch 原生实现（fallback）"""
+        raise NotImplementedError
+    
+    def forward_oot(
+        self,
+        *args,
+        **kwargs,
+    ):
+        """
+        Out-of-Tree 实现
+        调用自研GPU算子库
+        """
+        raise NotImplementedError
+```
+
+### 5.3 LayerNorm 算子适配
+
+```python
+# my_gpu_plugin/ops/layernorm.py
+
+import torch
+from typing import Optional, Tuple
+
+from .base import MyGPUCustomOp
+import mygpu_ops
+
+
+class MyGPURMSNorm(MyGPUCustomOp):
+    """RMS LayerNorm 算子适配"""
+    
+    def __init__(
+        self,
+        hidden_size: int,
+        eps: float = 1e-6,
+    ):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.eps = eps
+    
+    def forward_native(
+        self,
+        x: torch.Tensor,
+        weight: torch.Tensor,
+        residual: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """PyTorch 原生实现"""
+        if residual is not None:
+            x = x + residual
+            residual = x
+        
+        variance = x.pow(2).mean(-1, keepdim=True)
+        x = x * torch.rsqrt(variance + self.eps)
+        output = weight * x
+        
+        return output, residual
+    
+    def forward_oot(
+        self,
+        x: torch.Tensor,
+        weight: torch.Tensor,
+        residual: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """
+        调用自研GPU算子库实现
+        这里假设 mygpu_ops 提供了优化的 RMSNorm kernel
+        """
+        if residual is not None:
+            # 融合 residual add + rms_norm
+            output, residual = mygpu_ops.fused_add_rms_norm(
+                x,
+                residual,
+                weight,
+                self.eps,
+            )
+        else:
+            output = mygpu_ops.rms_norm(
+                x,
+                weight,
+                self.eps,
+            )
+            residual = None
+        
+        return output, residual
+
+
+class MyGPULayerNorm(MyGPUCustomOp):
+    """标准 LayerNorm 算子适配"""
+    
+    def __init__(
+        self,
+        hidden_size: int,
+        eps: float = 1e-5,
+    ):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.eps = eps
+    
+    def forward_oot(
+        self,
+        x: torch.Tensor,
+        weight: torch.Tensor,
+        bias: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """调用自研算子库"""
+        return mygpu_ops.layer_norm(
+            x,
+            weight,
+            bias,
+            self.eps,
+        )
+```
+
+### 5.4 Rotary Embedding 算子适配
+
+```python
+# my_gpu_plugin/ops/rotary_embedding.py
+
+import torch
+from typing import Tuple
+
+from .base import MyGPUCustomOp
+import mygpu_ops
+
+
+class MyGPURotaryEmbedding(MyGPUCustomOp):
+    """Rotary Position Embedding 算子适配"""
+    
+    def __init__(
+        self,
+        head_size: int,
+        rotary_dim: int,
+        max_position_embeddings: int = 8192,
+        base: float = 10000.0,
+        is_neox_style: bool = True,
+    ):
+        super().__init__()
+        self.head_size = head_size
+        self.rotary_dim = rotary_dim
+        self.max_position_embeddings = max_position_embeddings
+        self.base = base
+        self.is_neox_style = is_neox_style
+        
+        # 预计算 cos/sin 缓存
+        self._init_rope_cache()
+    
+    def _init_rope_cache(self):
+        """初始化 RoPE 缓存"""
+        inv_freq = 1.0 / (
+            self.base ** (
+                torch.arange(0, self.rotary_dim, 2, dtype=torch.float32) 
+                / self.rotary_dim
+            )
+        )
+        
+        t = torch.arange(self.max_position_embeddings, dtype=torch.float32)
+        freqs = torch.outer(t, inv_freq)
+        
+        self.register_buffer("cos_cached", freqs.cos().to(torch.float16))
+        self.register_buffer("sin_cached", freqs.sin().to(torch.float16))
+    
+    def forward_native(
+        self,
+        positions: torch.Tensor,
+        query: torch.Tensor,
+        key: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """PyTorch 原生实现"""
+        cos = self.cos_cached[positions]
+        sin = self.sin_cached[positions]
+        
+        # 应用旋转
+        query_rot = self._apply_rotary(query, cos, sin)
+        key_rot = self._apply_rotary(key, cos, sin)
+        
+        return query_rot, key_rot
+    
+    def _apply_rotary(
+        self,
+        x: torch.Tensor,
+        cos: torch.Tensor,
+        sin: torch.Tensor,
+    ) -> torch.Tensor:
+        """应用旋转变换"""
+        if self.is_neox_style:
+            x1 = x[..., :self.rotary_dim // 2]
+            x2 = x[..., self.rotary_dim // 2:self.rotary_dim]
+            
+            cos = cos.unsqueeze(-2)
+            sin = sin.unsqueeze(-2)
+            
+            rotated = torch.cat([-x2, x1], dim=-1)
+            x_rotated = x[..., :self.rotary_dim] * cos + rotated * sin
+            
+            return torch.cat([x_rotated, x[..., self.rotary_dim:]], dim=-1)
+        else:
+            # GPT-J style
+            x_rotated = x[..., :self.rotary_dim]
+            x_pass = x[..., self.rotary_dim:]
+            
+            x1 = x_rotated[..., ::2]
+            x2 = x_rotated[..., 1::2]
+            
+            cos = cos.unsqueeze(-1)
+            sin = sin.unsqueeze(-1)
+            
+            x_rotated = torch.stack([
+                x1 * cos - x2 * sin,
+                x1 * sin + x2 * cos,
+            ], dim=-1).flatten(-2)
+            
+            return torch.cat([x_rotated, x_pass], dim=-1)
+    
+    def forward_oot(
+        self,
+        positions: torch.Tensor,
+        query: torch.Tensor,
+        key: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        调用自研GPU算子库实现
+        融合的 RoPE kernel 可以显著提升性能
+        """
+        return mygpu_ops.rotary_embedding(
+            positions,
+            query,
+            key,
+            self.cos_cached,
+            self.sin_cached,
+            self.rotary_dim,
+            self.is_neox_style,
+        )
+```
+
+### 5.5 使用 torch.library 注册算子
+
+```python
+# my_gpu_plugin/ops/register.py
+
+import torch
+from torch.library import Library, impl
+
+import mygpu_ops
+
+# 创建自定义库
+my_lib = Library("mygpu_ops", "DEF")
+
+# 定义算子签名
+my_lib.define(
+    "rms_norm(Tensor x, Tensor weight, float eps) -> Tensor"
+)
+my_lib.define(
+    "fused_add_rms_norm(Tensor x, Tensor residual, Tensor weight, float eps) -> (Tensor, Tensor)"
+)
+my_lib.define(
+    "rotary_embedding(Tensor positions, Tensor query, Tensor key, "
+    "Tensor cos_cache, Tensor sin_cache, int rotary_dim, bool is_neox) -> (Tensor, Tensor)"
+)
+my_lib.define(
+    "paged_attention_v1(Tensor query, Tensor key_cache, Tensor value_cache, "
+    "Tensor block_tables, Tensor seq_lens, float scale, int block_size) -> Tensor"
+)
+
+# 实现算子 - PrivateUse1 设备
+@impl(my_lib, "rms_norm", "PrivateUse1")
+def rms_norm_mygpu(x, weight, eps):
+    return mygpu_ops.rms_norm(x, weight, eps)
+
+@impl(my_lib, "fused_add_rms_norm", "PrivateUse1")
+def fused_add_rms_norm_mygpu(x, residual, weight, eps):
+    return mygpu_ops.fused_add_rms_norm(x, residual, weight, eps)
+
+@impl(my_lib, "rotary_embedding", "PrivateUse1")
+def rotary_embedding_mygpu(positions, query, key, cos_cache, sin_cache, rotary_dim, is_neox):
+    return mygpu_ops.rotary_embedding(
+        positions, query, key, cos_cache, sin_cache, rotary_dim, is_neox
+    )
+
+@impl(my_lib, "paged_attention_v1", "PrivateUse1")
+def paged_attention_v1_mygpu(query, key_cache, value_cache, block_tables, seq_lens, scale, block_size):
+    return mygpu_ops.paged_attention_v1(
+        query, key_cache, value_cache, block_tables, seq_lens, scale, block_size
+    )
+
+
+# 也提供 CPU fallback 实现（用于调试）
+@impl(my_lib, "rms_norm", "CPU")
+def rms_norm_cpu(x, weight, eps):
+    variance = x.pow(2).mean(-1, keepdim=True)
+    x = x * torch.rsqrt(variance + eps)
+    return weight * x
+```
+
+### 5.6 C++ Extension 编译
+
+```python
+# setup.py
+
+from setuptools import setup, find_packages
+from torch.utils.cpp_extension import BuildExtension, CppExtension
+import os
+
+# 国产GPU SDK 路径
+MYGPU_HOME = os.environ.get("MYGPU_HOME", "/opt/mygpu")
+
+setup(
+    name="vllm-mygpu-plugin",
+    version="0.1.0",
+    packages=find_packages(),
+    ext_modules=[
+        CppExtension(
+            name="mygpu_ops._C",
+            sources=[
+                "my_gpu_plugin/csrc/ops.cpp",
+                "my_gpu_plugin/csrc/attention_kernels.cpp",
+                "my_gpu_plugin/csrc/layernorm_kernels.cpp",
+                "my_gpu_plugin/csrc/rotary_kernels.cpp",
+            ],
+            include_dirs=[
+                f"{MYGPU_HOME}/include",
+            ],
+            library_dirs=[
+                f"{MYGPU_HOME}/lib",
+            ],
+            libraries=[
+                "mygpu_runtime",
+                "mygpu_dnn",  # 自研DNN算子库
+            ],
+            extra_compile_args={
+                "cxx": ["-O3", "-std=c++17"],
+            },
+        ),
+    ],
+    cmdclass={"build_ext": BuildExtension},
+    entry_points={
+        "vllm.platform": [
+            "mygpu = my_gpu_plugin:MyGPUPlatform",
+        ],
+    },
+)
+```
+
+---
+
+## 6. 内存管理适配
+
+### 6.1 内存分配器适配
+
+```python
+# my_gpu_plugin/memory/allocator.py
+
+from typing import Optional, Dict, List
+import torch
+
+import mygpu
+
+
+class MyGPUCachingAllocator:
+    """
+    国产GPU缓存分配器
+    参考 PyTorch CUDACachingAllocator 实现
+    """
+    
+    def __init__(self, device_id: int = 0):
+        self.device_id = device_id
+        self.allocated_blocks: Dict[int, torch.Tensor] = {}
+        self.free_blocks: Dict[int, List[torch.Tensor]] = {}  # size -> blocks
+        
+    def allocate(self, size: int, dtype: torch.dtype = torch.float16) -> torch.Tensor:
+        """分配内存"""
+        # 对齐到 256 字节
+        aligned_size = ((size + 255) // 256) * 256
+        
+        # 尝试从缓存池获取
+        if aligned_size in self.free_blocks and self.free_blocks[aligned_size]:
+            block = self.free_blocks[aligned_size].pop()
+            return block
+        
+        # 分配新内存
+        device = torch.device(f"mygpu:{self.device_id}")
+        block = torch.empty(aligned_size // dtype.itemsize, dtype=dtype, device=device)
+        
+        return block
+    
+    def free(self, tensor: torch.Tensor) -> None:
+        """释放内存到缓存池"""
+        size = tensor.numel() * tensor.element_size()
+        aligned_size = ((size + 255) // 256) * 256
+        
+        if aligned_size not in self.free_blocks:
+            self.free_blocks[aligned_size] = []
+        
+        self.free_blocks[aligned_size].append(tensor)
+    
+    def empty_cache(self) -> None:
+        """清空缓存"""
+        self.free_blocks.clear()
+        mygpu.empty_cache()
+    
+    def memory_stats(self) -> Dict[str, int]:
+        """获取内存统计"""
+        return {
+            "allocated": mygpu.memory_allocated(self.device_id),
+            "reserved": mygpu.memory_reserved(self.device_id),
+            "total": mygpu.get_device_properties(self.device_id).total_memory,
+        }
+
+
+# 全局分配器实例
+_allocator: Optional[MyGPUCachingAllocator] = None
+
+
+def get_allocator(device_id: int = 0) -> MyGPUCachingAllocator:
+    """获取分配器实例"""
+    global _allocator
+    if _allocator is None:
+        _allocator = MyGPUCachingAllocator(device_id)
+    return _allocator
+```
+
+### 6.2 Block Manager 适配
+
+```python
+# my_gpu_plugin/memory/block_manager.py
+
+from typing import List, Dict, Set, Tuple, Optional
+from dataclasses import dataclass
+import torch
+
+
+@dataclass
+class PhysicalBlock:
+    """物理内存块"""
+    block_id: int
+    device: str  # "mygpu:0", "cpu", etc.
+    ref_count: int = 0
+
+
+class MyGPUBlockAllocator:
+    """
+    国产GPU Block分配器
+    用于管理 PagedAttention 的 KV Cache blocks
+    """
+    
+    def __init__(
+        self,
+        device: str,
+        block_size: int,
+        num_blocks: int,
+    ):
+        self.device = device
+        self.block_size = block_size
+        self.num_blocks = num_blocks
+        
+        # 空闲块列表
+        self.free_blocks: Set[int] = set(range(num_blocks))
+        # 已分配块
+        self.allocated_blocks: Dict[int, PhysicalBlock] = {}
+    
+    def allocate(self) -> Optional[int]:
+        """分配一个块"""
+        if not self.free_blocks:
+            return None
+        
+        block_id = self.free_blocks.pop()
+        self.allocated_blocks[block_id] = PhysicalBlock(
+            block_id=block_id,
+            device=self.device,
+            ref_count=1,
+        )
+        return block_id
+    
+    def free(self, block_id: int) -> None:
+        """释放块"""
+        if block_id in self.allocated_blocks:
+            block = self.allocated_blocks[block_id]
+            block.ref_count -= 1
+            if block.ref_count == 0:
+                del self.allocated_blocks[block_id]
+                self.free_blocks.add(block_id)
+    
+    def fork(self, block_id: int) -> int:
+        """Fork块（Copy-on-Write）"""
+        if block_id in self.allocated_blocks:
+            self.allocated_blocks[block_id].ref_count += 1
+        return block_id
+    
+    def get_num_free_blocks(self) -> int:
+        """获取空闲块数量"""
+        return len(self.free_blocks)
+
+
+class MyGPUBlockSpaceManager:
+    """
+    Block空间管理器
+    管理GPU和CPU的block分配
+    """
+    
+    def __init__(
+        self,
+        block_size: int,
+        num_gpu_blocks: int,
+        num_cpu_blocks: int,
+        device_id: int = 0,
+    ):
+        self.block_size = block_size
+        
+        # GPU block allocator
+        self.gpu_allocator = MyGPUBlockAllocator(
+            device=f"mygpu:{device_id}",
+            block_size=block_size,
+            num_blocks=num_gpu_blocks,
+        )
+        
+        # CPU block allocator (用于 swap)
+        self.cpu_allocator = MyGPUBlockAllocator(
+            device="cpu",
+            block_size=block_size,
+            num_blocks=num_cpu_blocks,
+        )
+        
+        # Sequence -> Block Table 映射
+        self.block_tables: Dict[int, List[int]] = {}
+    
+    def allocate_blocks_for_seq(
+        self,
+        seq_id: int,
+        num_blocks: int,
+    ) -> List[int]:
+        """为序列分配blocks"""
+        blocks = []
+        for _ in range(num_blocks):
+            block_id = self.gpu_allocator.allocate()
+            if block_id is None:
+                # 分配失败，释放已分配的块
+                for b in blocks:
+                    self.gpu_allocator.free(b)
+                raise RuntimeError("No free GPU blocks available")
+            blocks.append(block_id)
+        
+        self.block_tables[seq_id] = blocks
+        return blocks
+    
+    def free_blocks_for_seq(self, seq_id: int) -> None:
+        """释放序列的blocks"""
+        if seq_id in self.block_tables:
+            for block_id in self.block_tables[seq_id]:
+                self.gpu_allocator.free(block_id)
+            del self.block_tables[seq_id]
+    
+    def get_block_table(self, seq_id: int) -> List[int]:
+        """获取序列的block table"""
+        return self.block_tables.get(seq_id, [])
+    
+    def can_allocate(self, num_blocks: int) -> bool:
+        """检查是否可以分配指定数量的块"""
+        return self.gpu_allocator.get_num_free_blocks() >= num_blocks
+```
+
+---
+
+## 7. 分布式通信适配
+
+### 7.1 DeviceCommunicator 实现
+
+```python
+# my_gpu_plugin/distributed/communicator.py
+
+from typing import List, Optional, Tuple
+import torch
+import torch.distributed as dist
+
+from vllm.distributed import DeviceCommunicatorBase
+
+import mygpu
+import mygpu_comm  # 自研通信库
+
+
+class MyGPUDeviceCommunicator(DeviceCommunicatorBase):
+    """
+    国产GPU分布式通信器
+    实现多卡之间的通信原语
+    """
+    
+    def __init__(
+        self,
+        group: dist.ProcessGroup,
+        device: torch.device,
+        use_custom_all_reduce: bool = True,
+    ):
+        self.group = group
+        self.device = device
+        self.rank = dist.get_rank(group)
+        self.world_size = dist.get_world_size(group)
+        self.use_custom_all_reduce = use_custom_all_reduce
+        
+        # 初始化自研通信库
+        if use_custom_all_reduce:
+            self._init_custom_comm()
+    
+    def _init_custom_comm(self) -> None:
+        """初始化自研通信库"""
+        # 假设自研GPU支持类似 NCCL 的高性能通信
+        mygpu_comm.init(
+            rank=self.rank,
+            world_size=self.world_size,
+            device_id=self.device.index,
+        )
+    
+    def all_reduce(
+        self,
+        tensor: torch.Tensor,
+        op: dist.ReduceOp = dist.ReduceOp.SUM,
+    ) -> torch.Tensor:
+        """
+        All-Reduce 操作
+        """
+        if self.use_custom_all_reduce and tensor.device.type == "mygpu":
+            # 使用自研高性能 all_reduce
+            return mygpu_comm.all_reduce(tensor, op=op)
+        else:
+            # Fallback 到 PyTorch 分布式
+            dist.all_reduce(tensor, op=op, group=self.group)
+            return tensor
+    
+    def all_gather(
+        self,
+        tensor: torch.Tensor,
+        dim: int = 0,
+    ) -> torch.Tensor:
+        """
+        All-Gather 操作
+        """
+        if self.use_custom_all_reduce and tensor.device.type == "mygpu":
+            return mygpu_comm.all_gather(tensor, dim=dim)
+        else:
+            output_list = [
+                torch.empty_like(tensor) for _ in range(self.world_size)
+            ]
+            dist.all_gather(output_list, tensor, group=self.group)
+            return torch.cat(output_list, dim=dim)
+    
+    def broadcast(
+        self,
+        tensor: torch.Tensor,
+        src: int = 0,
+    ) -> torch.Tensor:
+        """
+        Broadcast 操作
+        """
+        if self.use_custom_all_reduce and tensor.device.type == "mygpu":
+            return mygpu_comm.broadcast(tensor, src=src)
+        else:
+            dist.broadcast(tensor, src=src, group=self.group)
+            return tensor
+    
+    def send(
+        self,
+        tensor: torch.Tensor,
+        dst: int,
+    ) -> None:
+        """发送数据"""
+        if self.use_custom_all_reduce and tensor.device.type == "mygpu":
+            mygpu_comm.send(tensor, dst=dst)
+        else:
+            dist.send(tensor, dst=dst, group=self.group)
+    
+    def recv(
+        self,
+        tensor: torch.Tensor,
+        src: int,
+    ) -> torch.Tensor:
+        """接收数据"""
+        if self.use_custom_all_reduce and tensor.device.type == "mygpu":
+            return mygpu_comm.recv(tensor, src=src)
+        else:
+            dist.recv(tensor, src=src, group=self.group)
+            return tensor
+
+
+class MyGPUCustomAllReduce:
+    """
+    自定义 All-Reduce 实现
+    针对小数据量优化（Tensor Parallelism 场景）
+    """
+    
+    def __init__(
+        self,
+        world_size: int,
+        rank: int,
+        device_id: int,
+    ):
+        self.world_size = world_size
+        self.rank = rank
+        self.device_id = device_id
+        
+        # 分配共享内存 buffer
+        self._init_ipc_buffers()
+    
+    def _init_ipc_buffers(self) -> None:
+        """初始化 IPC 共享内存"""
+        # 使用自研GPU的IPC机制
+        # 这允许GPU之间直接通过 PCIe/NVLink 通信
+        self.buffer_size = 64 * 1024 * 1024  # 64MB
+        
+        mygpu_comm.create_ipc_buffer(
+            device_id=self.device_id,
+            size=self.buffer_size,
+        )
+    
+    def custom_all_reduce(
+        self,
+        tensor: torch.Tensor,
+    ) -> torch.Tensor:
+        """
+        自定义 All-Reduce
+        使用 Two-Shot All-Reduce 算法
+        """
+        if tensor.numel() * tensor.element_size() > self.buffer_size:
+            # 数据太大，fallback 到标准实现
+            return mygpu_comm.all_reduce(tensor)
+        
+        # 使用优化的 IPC All-Reduce
+        return mygpu_comm.ipc_all_reduce(tensor)
+```
+
+### 7.2 张量并行支持
+
+```python
+# my_gpu_plugin/distributed/tensor_parallel.py
+
+from typing import Optional
+import torch
+import torch.nn as nn
+
+from .communicator import MyGPUDeviceCommunicator
+
+
+class ColumnParallelLinear(nn.Module):
+    """
+    列并行线性层
+    权重按列切分到多卡
+    """
+    
+    def __init__(
+        self,
+        input_size: int,
+        output_size: int,
+        bias: bool = True,
+        gather_output: bool = True,
+        communicator: Optional[MyGPUDeviceCommunicator] = None,
+    ):
+        super().__init__()
+        
+        self.communicator = communicator
+        self.gather_output = gather_output
+        
+        # 计算本地输出大小
+        world_size = communicator.world_size if communicator else 1
+        self.output_size_per_partition = output_size // world_size
+        
+        # 初始化权重
+        self.weight = nn.Parameter(
+            torch.empty(self.output_size_per_partition, input_size)
+        )
+        if bias:
+            self.bias = nn.Parameter(
+                torch.empty(self.output_size_per_partition)
+            )
+        else:
+            self.register_parameter("bias", None)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 本地矩阵乘法
+        output = torch.nn.functional.linear(x, self.weight, self.bias)
+        
+        # 如果需要，gather所有分片
+        if self.gather_output and self.communicator:
+            output = self.communicator.all_gather(output, dim=-1)
+        
+        return output
+
+
+class RowParallelLinear(nn.Module):
+    """
+    行并行线性层
+    权重按行切分到多卡
+    """
+    
+    def __init__(
+        self,
+        input_size: int,
+        output_size: int,
+        bias: bool = True,
+        input_is_parallel: bool = False,
+        communicator: Optional[MyGPUDeviceCommunicator] = None,
+    ):
+        super().__init__()
+        
+        self.communicator = communicator
+        self.input_is_parallel = input_is_parallel
+        
+        # 计算本地输入大小
+        world_size = communicator.world_size if communicator else 1
+        self.input_size_per_partition = input_size // world_size
+        
+        # 初始化权重
+        self.weight = nn.Parameter(
+            torch.empty(output_size, self.input_size_per_partition)
+        )
+        if bias:
+            self.bias = nn.Parameter(torch.empty(output_size))
+        else:
+            self.register_parameter("bias", None)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        # 如果输入不是并行的，需要先切分
+        if not self.input_is_parallel and self.communicator:
+            # 获取本地切片
+            rank = self.communicator.rank
+            x = x[..., rank * self.input_size_per_partition:
+                     (rank + 1) * self.input_size_per_partition]
+        
+        # 本地矩阵乘法
+        output = torch.nn.functional.linear(x, self.weight)
+        
+        # All-Reduce 合并结果
+        if self.communicator:
+            output = self.communicator.all_reduce(output)
+        
+        # 加 bias
+        if self.bias is not None:
+            output = output + self.bias
+        
+        return output
+```
+
+---
+
+## 8. 性能优化
+
+### 8.1 性能分析工具
+
+```python
+# my_gpu_plugin/profiler.py
+
+import time
+from typing import Dict, List, Optional, Callable
+from contextlib import contextmanager
+from dataclasses import dataclass
+import torch
+
+import mygpu
+
+
+@dataclass
+class ProfileEvent:
+    """性能事件"""
+    name: str
+    start_time: float
+    end_time: float
+    device_time: Optional[float] = None  # GPU 执行时间
+    
+    @property
+    def duration_ms(self) -> float:
+        return (self.end_time - self.start_time) * 1000
+    
+    @property
+    def device_time_ms(self) -> Optional[float]:
+        return self.device_time * 1000 if self.device_time else None
+
+
+class MyGPUProfiler:
+    """国产GPU性能分析器"""
+    
+    def __init__(self):
+        self.events: List[ProfileEvent] = []
+        self.enabled = False
+    
+    def enable(self) -> None:
+        """启用分析"""
+        self.enabled = True
+        mygpu.profiler.start()
+    
+    def disable(self) -> None:
+        """禁用分析"""
+        self.enabled = False
+        mygpu.profiler.stop()
+    
+    @contextmanager
+    def profile(self, name: str):
+        """Profile 上下文管理器"""
+        if not self.enabled:
+            yield
+            return
+        
+        mygpu.synchronize()
+        start = time.perf_counter()
+        
+        # 记录 GPU 事件
+        start_event = mygpu.Event()
+        end_event = mygpu.Event()
+        start_event.record()
+        
+        yield
+        
+        end_event.record()
+        mygpu.synchronize()
+        end = time.perf_counter()
+        
+        # 计算 GPU 时间
+        device_time = start_event.elapsed_time(end_event) / 1000  # ms -> s
+        
+        self.events.append(ProfileEvent(
+            name=name,
+            start_time=start,
+            end_time=end,
+            device_time=device_time,
+        ))
+    
+    def summary(self) -> Dict[str, Dict]:
+        """生成分析摘要"""
+        summary = {}
+        
+        for event in self.events:
+            if event.name not in summary:
+                summary[event.name] = {
+                    "count": 0,
+                    "total_time_ms": 0,
+                    "total_device_time_ms": 0,
+                }
+            
+            summary[event.name]["count"] += 1
+            summary[event.name]["total_time_ms"] += event.duration_ms
+            if event.device_time_ms:
+                summary[event.name]["total_device_time_ms"] += event.device_time_ms
+        
+        # 计算平均值
+        for name, stats in summary.items():
+            stats["avg_time_ms"] = stats["total_time_ms"] / stats["count"]
+            if stats["total_device_time_ms"] > 0:
+                stats["avg_device_time_ms"] = stats["total_device_time_ms"] / stats["count"]
+        
+        return summary
+    
+    def print_summary(self) -> None:
+        """打印分析摘要"""
+        summary = self.summary()
+        
+        print("\n" + "=" * 80)
+        print("Performance Summary")
+        print("=" * 80)
+        print(f"{'Operation':<30} {'Count':<10} {'Total(ms)':<15} {'Avg(ms)':<15} {'GPU(ms)':<15}")
+        print("-" * 80)
+        
+        for name, stats in sorted(summary.items(), key=lambda x: -x[1]["total_time_ms"]):
+            gpu_time = stats.get("avg_device_time_ms", "-")
+            print(f"{name:<30} {stats['count']:<10} {stats['total_time_ms']:<15.2f} "
+                  f"{stats['avg_time_ms']:<15.2f} {gpu_time if isinstance(gpu_time, str) else f'{gpu_time:.2f}':<15}")
+        
+        print("=" * 80)
+
+
+# 全局 profiler 实例
+_profiler = MyGPUProfiler()
+
+
+def get_profiler() -> MyGPUProfiler:
+    return _profiler
+```
+
+### 8.2 优化技巧
+
+```python
+# my_gpu_plugin/optimizations.py
+
+import torch
+from typing import List, Optional
+
+import mygpu
+
+
+class KernelFusion:
+    """
+    算子融合优化
+    将多个小算子融合成一个大算子，减少 kernel launch 开销
+    """
+    
+    @staticmethod
+    def fused_attention_ffn(
+        hidden_states: torch.Tensor,
+        attention_output: torch.Tensor,
+        ffn_weight1: torch.Tensor,
+        ffn_weight2: torch.Tensor,
+        norm_weight: torch.Tensor,
+        eps: float = 1e-6,
+    ) -> torch.Tensor:
+        """
+        融合 Attention 后的残差连接 + LayerNorm + FFN
+        """
+        # 调用融合 kernel
+        return mygpu_ops.fused_residual_norm_ffn(
+            hidden_states,
+            attention_output,
+            ffn_weight1,
+            ffn_weight2,
+            norm_weight,
+            eps,
+        )
+
+
+class MemoryOptimization:
+    """内存优化"""
+    
+    @staticmethod
+    def enable_activation_checkpointing(model: torch.nn.Module) -> None:
+        """
+        启用激活检查点
+        用计算换内存
+        """
+        from torch.utils.checkpoint import checkpoint
+        
+        # 对 Transformer 层启用检查点
+        for name, module in model.named_modules():
+            if "TransformerLayer" in module.__class__.__name__:
+                module._checkpoint = True
+    
+    @staticmethod
+    def use_flash_attention(
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        scale: float,
+    ) -> torch.Tensor:
+        """
+        使用 Flash Attention（如果可用）
+        显著减少内存占用
+        """
+        try:
+            return mygpu_ops.flash_attention(query, key, value, scale)
+        except Exception:
+            # Fallback 到标准 attention
+            scores = torch.matmul(query, key.transpose(-2, -1)) * scale
+            attn = torch.softmax(scores, dim=-1)
+            return torch.matmul(attn, value)
+
+
+class StreamOptimization:
+    """
+    Stream/Graph 优化
+    使用多 stream 并行和 graph 捕获
+    """
+    
+    def __init__(self, num_streams: int = 2):
+        self.streams = [mygpu.Stream() for _ in range(num_streams)]
+        self.current_stream_idx = 0
+    
+    def get_stream(self) -> mygpu.Stream:
+        """获取下一个可用 stream"""
+        stream = self.streams[self.current_stream_idx]
+        self.current_stream_idx = (self.current_stream_idx + 1) % len(self.streams)
+        return stream
+    
+    @staticmethod
+    def capture_graph(
+        func,
+        warmup_iterations: int = 3,
+    ):
+        """
+        捕获执行图
+        用于优化 decode 阶段的固定计算模式
+        """
+        # 预热
+        for _ in range(warmup_iterations):
+            func()
+        
+        mygpu.synchronize()
+        
+        # 捕获图
+        graph = mygpu.Graph()
+        with mygpu.graph(graph):
+            func()
+        
+        return graph
+```
+
+### 8.3 性能对比基准
+
+```python
+# my_gpu_plugin/benchmark.py
+
+import time
+import torch
+from typing import Dict, List, Tuple
+from dataclasses import dataclass
+
+import mygpu
+from .platform import MyGPUPlatform
+
+
+@dataclass
+class BenchmarkResult:
+    """基准测试结果"""
+    name: str
+    batch_size: int
+    seq_len: int
+    tokens_per_second: float
+    latency_ms: float
+    memory_used_gb: float
+
+
+def benchmark_prefill(
+    model,
+    batch_sizes: List[int] = [1, 4, 8, 16],
+    seq_lens: List[int] = [128, 512, 1024, 2048],
+    num_runs: int = 10,
+) -> List[BenchmarkResult]:
+    """Prefill 阶段基准测试"""
+    results = []
+    
+    for batch_size in batch_sizes:
+        for seq_len in seq_lens:
+            # 准备输入
+            input_ids = torch.randint(
+                0, model.config.vocab_size,
+                (batch_size, seq_len),
+                device=f"mygpu:{MyGPUPlatform.current_device()}",
+            )
+            
+            # 预热
+            with torch.no_grad():
+                _ = model(input_ids)
+            
+            mygpu.synchronize()
+            
+            # 测试
+            start = time.perf_counter()
+            for _ in range(num_runs):
+                with torch.no_grad():
+                    _ = model(input_ids)
+            mygpu.synchronize()
+            end = time.perf_counter()
+            
+            elapsed = end - start
+            total_tokens = batch_size * seq_len * num_runs
+            tokens_per_second = total_tokens / elapsed
+            latency_ms = (elapsed / num_runs) * 1000
+            
+            memory_used = MyGPUPlatform.get_current_memory_usage() / (1024**3)
+            
+            results.append(BenchmarkResult(
+                name="prefill",
+                batch_size=batch_size,
+                seq_len=seq_len,
+                tokens_per_second=tokens_per_second,
+                latency_ms=latency_ms,
+                memory_used_gb=memory_used,
+            ))
+    
+    return results
+
+
+def benchmark_decode(
+    model,
+    batch_sizes: List[int] = [1, 4, 8, 16, 32],
+    context_lens: List[int] = [128, 512, 1024],
+    num_tokens: int = 100,
+) -> List[BenchmarkResult]:
+    """Decode 阶段基准测试"""
+    results = []
+    
+    for batch_size in batch_sizes:
+        for context_len in context_lens:
+            # 准备 KV Cache
+            # ... 初始化 cache ...
+            
+            # 单步 decode 测试
+            input_ids = torch.randint(
+                0, model.config.vocab_size,
+                (batch_size, 1),
+                device=f"mygpu:{MyGPUPlatform.current_device()}",
+            )
+            
+            # 预热
+            with torch.no_grad():
+                for _ in range(10):
+                    _ = model(input_ids)
+            
+            mygpu.synchronize()
+            
+            # 测试
+            start = time.perf_counter()
+            for _ in range(num_tokens):
+                with torch.no_grad():
+                    _ = model(input_ids)
+            mygpu.synchronize()
+            end = time.perf_counter()
+            
+            elapsed = end - start
+            tokens_per_second = (batch_size * num_tokens) / elapsed
+            latency_per_token_ms = elapsed / num_tokens * 1000
+            
+            memory_used = MyGPUPlatform.get_current_memory_usage() / (1024**3)
+            
+            results.append(BenchmarkResult(
+                name=f"decode_ctx{context_len}",
+                batch_size=batch_size,
+                seq_len=1,
+                tokens_per_second=tokens_per_second,
+                latency_ms=latency_per_token_ms,
+                memory_used_gb=memory_used,
+            ))
+    
+    return results
+
+
+def print_benchmark_results(results: List[BenchmarkResult]) -> None:
+    """打印基准测试结果"""
+    print("\n" + "=" * 100)
+    print("Benchmark Results")
+    print("=" * 100)
+    print(f"{'Test':<20} {'Batch':<8} {'SeqLen':<8} {'Tokens/s':<15} {'Latency(ms)':<15} {'Memory(GB)':<12}")
+    print("-" * 100)
+    
+    for r in results:
+        print(f"{r.name:<20} {r.batch_size:<8} {r.seq_len:<8} "
+              f"{r.tokens_per_second:<15.2f} {r.latency_ms:<15.2f} {r.memory_used_gb:<12.2f}")
+    
+    print("=" * 100)
+```
+
+---
+
+## 9. 调试与问题排查
+
+### 9.1 常见问题与解决方案
+
+| 问题 | 可能原因 | 解决方案 |
+|------|----------|----------|
+| 编译失败 | SDK 路径错误 | 检查 `MYGPU_HOME` 环境变量 |
+| 运行时崩溃 | 内存越界 | 使用 `mygpu-sanitizer` 检查 |
+| 结果不正确 | 精度问题 | 对比 CPU 结果，检查数值稳定性 |
+| 性能差 | Kernel 未优化 | 使用 profiler 定位热点 |
+| OOM | 内存泄漏 | 检查 tensor 引用，使用 memory snapshot |
+
+### 9.2 调试工具使用
+
+```python
+# my_gpu_plugin/debug.py
+
+import torch
+from typing import Optional
+
+import mygpu
+
+
+def compare_with_cuda(
+    func_mygpu,
+    func_cuda,
+    *args,
+    rtol: float = 1e-3,
+    atol: float = 1e-5,
+    **kwargs,
+):
+    """
+    对比国产GPU结果与CUDA结果
+    用于验证正确性
+    """
+    # 在国产GPU上执行
+    mygpu_args = [a.to("mygpu:0") if torch.is_tensor(a) else a for a in args]
+    mygpu_result = func_mygpu(*mygpu_args, **kwargs)
+    
+    # 在CUDA上执行
+    cuda_args = [a.to("cuda:0") if torch.is_tensor(a) else a for a in args]
+    cuda_result = func_cuda(*cuda_args, **kwargs)
+    
+    # 对比结果
+    mygpu_result_cpu = mygpu_result.cpu()
+    cuda_result_cpu = cuda_result.cpu()
+    
+    if torch.allclose(mygpu_result_cpu, cuda_result_cpu, rtol=rtol, atol=atol):
+        print("✓ Results match!")
+        return True
+    else:
+        diff = torch.abs(mygpu_result_cpu - cuda_result_cpu)
+        print(f"✗ Results differ!")
+        print(f"  Max diff: {diff.max().item()}")
+        print(f"  Mean diff: {diff.mean().item()}")
+        print(f"  Diff > atol: {(diff > atol).sum().item()} elements")
+        return False
+
+
+def memory_snapshot(device_id: int = 0) -> Dict:
+    """
+    获取内存快照
+    用于调试内存问题
+    """
+    return {
+        "allocated": mygpu.memory_allocated(device_id),
+        "reserved": mygpu.memory_reserved(device_id),
+        "max_allocated": mygpu.max_memory_allocated(device_id),
+        "max_reserved": mygpu.max_memory_reserved(device_id),
+    }
+
+
+def print_memory_summary(device_id: int = 0) -> None:
+    """打印内存摘要"""
+    snapshot = memory_snapshot(device_id)
+    
+    print("\n" + "=" * 50)
+    print(f"Memory Summary (Device {device_id})")
+    print("=" * 50)
+    print(f"Allocated: {snapshot['allocated'] / 1024**3:.2f} GB")
+    print(f"Reserved:  {snapshot['reserved'] / 1024**3:.2f} GB")
+    print(f"Max Allocated: {snapshot['max_allocated'] / 1024**3:.2f} GB")
+    print(f"Max Reserved:  {snapshot['max_reserved'] / 1024**3:.2f} GB")
+    print("=" * 50)
+
+
+class DebugMode:
+    """
+    调试模式
+    启用额外的检查和日志
+    """
+    
+    _enabled = False
+    
+    @classmethod
+    def enable(cls) -> None:
+        cls._enabled = True
+        # 启用同步执行
+        mygpu.set_sync_mode(True)
+        # 启用 NaN/Inf 检查
+        torch.autograd.set_detect_anomaly(True)
+    
+    @classmethod
+    def disable(cls) -> None:
+        cls._enabled = False
+        mygpu.set_sync_mode(False)
+        torch.autograd.set_detect_anomaly(False)
+    
+    @classmethod
+    def is_enabled(cls) -> bool:
+        return cls._enabled
+    
+    @classmethod
+    def check_tensor(cls, tensor: torch.Tensor, name: str = "tensor") -> bool:
+        """检查 tensor 是否有效"""
+        if not cls._enabled:
+            return True
+        
+        has_nan = torch.isnan(tensor).any().item()
+        has_inf = torch.isinf(tensor).any().item()
+        
+        if has_nan or has_inf:
+            print(f"⚠ {name}: has_nan={has_nan}, has_inf={has_inf}")
+            print(f"  shape={tensor.shape}, dtype={tensor.dtype}")
+            print(f"  min={tensor.min().item()}, max={tensor.max().item()}")
+            return False
+        
+        return True
+```
+
+---
+
+## 10. 完整示例代码
+
+### 10.1 最小可运行示例
+
+```python
+# example/minimal_plugin.py
+
+"""
+最小可运行的 vLLM Platform Plugin 示例
+展示核心适配流程
+"""
+
+import torch
+from typing import Tuple, Optional
+
+# 假设这是国产GPU的Python绑定
+# import mygpu
+
+
+# ============ 1. Platform 定义 ============
+
+from vllm.platforms import PlatformBase
+
+
+class MinimalGPUPlatform(PlatformBase):
+    """最小 Platform 实现"""
+    
+    device_name = "minimal_gpu"
+    device_type = "minimal_gpu"
+    dispatch_key = "PrivateUse1"
+    
+    @classmethod
+    def get_device_capability(cls, device_id: int = 0) -> Tuple[int, int]:
+        return (8, 0)
+    
+    @classmethod
+    def get_device_name(cls, device_id: int = 0) -> str:
+        return f"MinimalGPU-{device_id}"
+    
+    @classmethod
+    def is_available(cls) -> bool:
+        # 检查设备是否可用
+        # return mygpu.is_available()
+        return True  # 示例中返回 True
+    
+    @classmethod
+    def get_device_total_memory(cls, device_id: int = 0) -> int:
+        # 返回设备总显存（字节）
+        # return mygpu.get_device_properties(device_id).total_memory
+        return 24 * 1024 * 1024 * 1024  # 示例：24GB
+
+
+# ============ 2. CustomOp 定义 ============
+
+from vllm.model_executor.layers.ops import CustomOp
+
+
+class MinimalRMSNorm(CustomOp):
+    """RMSNorm 算子"""
+    
+    def __init__(self, hidden_size: int, eps: float = 1e-6):
+        super().__init__()
+        self.hidden_size = hidden_size
+        self.eps = eps
+    
+    def forward_native(
+        self,
+        x: torch.Tensor,
+        weight: torch.Tensor,
+    ) -> torch.Tensor:
+        """PyTorch 原生实现"""
+        variance = x.pow(2).mean(-1, keepdim=True)
+        x = x * torch.rsqrt(variance + self.eps)
+        return weight * x
+    
+    def forward_oot(
+        self,
+        x: torch.Tensor,
+        weight: torch.Tensor,
+    ) -> torch.Tensor:
+        """调用自研算子库"""
+        # return mygpu_ops.rms_norm(x, weight, self.eps)
+        
+        # 示例中使用原生实现
+        return self.forward_native(x, weight)
+
+
+# ============ 3. 注册插件 ============
+
+def register_plugin():
+    """注册插件到 vLLM"""
+    from vllm.platforms import _platforms
+    
+    # 注册 Platform
+    _platforms["minimal_gpu"] = MinimalGPUPlatform
+    
+    print("MinimalGPU Plugin registered successfully!")
+
+
+# ============ 4. 使用示例 ============
+
+def main():
+    # 注册插件
+    register_plugin()
+    
+    # 检查设备
+    print(f"Device available: {MinimalGPUPlatform.is_available()}")
+    print(f"Device name: {MinimalGPUPlatform.get_device_name()}")
+    print(f"Total memory: {MinimalGPUPlatform.get_device_total_memory() / 1024**3:.2f} GB")
+    
+    # 测试算子
+    hidden_size = 4096
+    batch_size = 4
+    seq_len = 128
+    
+    x = torch.randn(batch_size, seq_len, hidden_size)
+    weight = torch.ones(hidden_size)
+    
+    rmsnorm = MinimalRMSNorm(hidden_size)
+    output = rmsnorm(x, weight)
+    
+    print(f"RMSNorm output shape: {output.shape}")
+    print("Plugin test passed!")
+
+
+if __name__ == "__main__":
+    main()
+```
+
+### 10.2 pyproject.toml 配置
+
+```toml
+# pyproject.toml
+
+[build-system]
+requires = ["setuptools>=61.0", "torch>=2.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vllm-mygpu-plugin"
+version = "0.1.0"
+description = "vLLM Plugin for MyGPU"
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "Apache-2.0"}
+
+dependencies = [
+    "torch>=2.0",
+    "vllm>=0.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "black",
+    "mypy",
+]
+
+[project.entry-points."vllm.platform"]
+mygpu = "my_gpu_plugin:MyGPUPlatform"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["my_gpu_plugin*"]
+```
+
+---
+
+## 附录：关键参考资料
+
+| 资源 | 链接 |
+|------|------|
+| vLLM 官方文档 | https://docs.vllm.ai |
+| vLLM GitHub | https://github.com/vllm-project/vllm |
+| vLLM Platform Plugin 示例 | vllm/vllm/platforms/ |
+| PyTorch 自定义设备 | https://pytorch.org/docs/stable/notes/extending.html |
+| PyTorch cpp_extension | https://pytorch.org/docs/stable/cpp_extension.html |
+| PagedAttention 论文 | https://arxiv.org/abs/2309.06180 |
+
+---
+
+## 总结
+
+国产 GPU 适配 vLLM 的核心工作：
+
+1. **实现 Platform 类** - 定义设备属性和检测接口
+2. **包装自研算子库** - 通过 CustomOp 机制调用硬件专用 kernel
+3. **实现 Attention Backend** - PagedAttention 是性能关键
+4. **适配内存管理** - Block 分配与 KV Cache 管理
+5. **支持分布式** - 多卡并行通信
+6. **持续优化** - Profile → 优化 → Benchmark 循环
+
+掌握这套流程，就能把任何拥有算子库的国产 GPU 接入 vLLM 生态。

@@ -1,0 +1,48 @@
+# 嵌套 git 仓库（有独立远程仓库）
+1_大模型技术/3_AI应用开发/Agent技术/4_OpenClaw-Private-AI/
+
+# macOS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+
+# 量化模型文件（太大，不需要上传）
+教程/llm-compressor/qwen-0.5b-int8/
+教程/llm-compressor/*-int8/
+教程/llm-compressor/*-int4/
+教程/llm-compressor/*-quantized/
+
+# 模型文件（太大，不需要上传）
+教程/llm-compressor/models/
+教程/llm-compressor/*.safetensors
+教程/llm-compressor/*.bin
+
+# 日志文件
+教程/llm-compressor/*.log
+教程/llm-compressor/*_log.txt
+教程/llm-compressor/run_log.txt
+教程/llm-compressor/install_log.txt
+
+# llm-compressor 子仓库（不需要提交）
+教程/llm-compressor/llm-compressor/.git/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# 虚拟环境
+venv/
+env/
+ENV/
+
