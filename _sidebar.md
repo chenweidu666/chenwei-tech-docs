@@ -2,75 +2,104 @@
 
 ---
 
-* **一、基础层**
-  * [1.1 动机与缩放取舍](docs/01_基础层/1.1_动机与缩放取舍.md)
-  * [1.2 Transformer 架构详解](docs/01_基础层/1.2_Transformer 架构详解.md)
-  * [1.3 主流模型选型 2026](docs/01_基础层/1.3_主流模型选型 2026.md)
-  * [1.4 趋势与参考资料](docs/01_基础层/1.4_趋势与参考资料.md)
+* **01_基础层_Foundation**
+  * [01_大模型动机与Scaling_Laws](docs/01_基础层_Foundation/01_大模型动机与Scaling_Laws.md)
+  * [02_Transformer_架构详解](docs/01_基础层_Foundation/02_Transformer_架构详解.md)
+  * [03_主流模型选型与对比](docs/01_基础层_Foundation/03_主流模型选型与对比.md)
+  * [04_前沿趋势与参考文献](docs/01_基础层_Foundation/04_前沿趋势与参考文献.md)
 
 ---
 
-* **二、训练与微调**
-  * [2.1 数据处理与预训练](docs/02_训练与微调/2.1_数据处理与预训练.md)
-  * [2.2 SFT 监督微调](docs/02_训练与微调/2.2_SFT 监督微调.md)
-  * [2.3 LoRA/QLoRA 高效微调](docs/02_训练与微调/2.3_LoRA_QLoRA 高效微调.md)
-  * [2.4 RLHF/DPO 对齐训练](docs/02_训练与微调/2.4_RLHF_DPO 对齐训练.md)
-  * [2.5 分布式训练](docs/02_训练与微调/2.5_分布式训练.md)
+* **02_数据_训练与微调_Data_Training_Fine-tuning**
+  * [01_数据处理与预训练](docs/02_数据_训练与微调_Data_Training_Fine-tuning/01_数据处理与预训练.md)
+  * [02_SFT_Supervised_Fine-Tuning](docs/02_数据_训练与微调_Data_Training_Fine-tuning/02_SFT_Supervised_Fine-Tuning.md)
+  * [03_LoRA_QLoRA_PEFT_高效微调](docs/02_数据_训练与微调_Data_Training_Fine-tuning/03_LoRA_QLoRA_PEFT_高效微调.md)
+  * [04_RLHF_DPO_对齐技术](docs/02_数据_训练与微调_Data_Training_Fine-tuning/04_RLHF_DPO_对齐技术.md)
+  * [05_分布式训练_DeepSpeed_FSDP](docs/02_数据_训练与微调_Data_Training_Fine-tuning/05_分布式训练_DeepSpeed_FSDP.md)
+  * [06_评估与基准_Benchmarking](docs/02_数据_训练与微调_Data_Training_Fine-tuning/06_评估与基准_Benchmarking.md)
 
 ---
 
-* **三、部署与推理**
-  * [3.1 KV Cache 与推理加速](docs/03_部署与推理/3.1_KVCache 与推理加速.md)
-  * [3.2 vLLM 推理部署](docs/03_部署与推理/3.2_vLLM 推理部署.md)
-  * [3.3 INT4/INT8 量化](docs/03_部署与推理/3.3_INT 量化.md)
+* **03_部署与推理_Deployment_Inference**
+  * [01_KV_Cache_与推理优化](docs/03_部署与推理_Deployment_Inference/01_KV_Cache_与推理优化.md)
+  * [02_vLLM_TGI_推理引擎](docs/03_部署与推理_Deployment_Inference/02_vLLM_TGI_推理引擎.md)
+  * [03_量化_INT4_INT8_GGUF_AWQ](docs/03_部署与推理_Deployment_Inference/03_量化_INT4_INT8_GGUF_AWQ.md)
+  * [04_分布式推理与_Serving](docs/03_部署与推理_Deployment_Inference/04_分布式推理与_Serving.md)
+  * [05_多模态部署_Vision_Audio](docs/03_部署与推理_Deployment_Inference/05_多模态部署_Vision_Audio.md)
 
 ---
 
-* **四、RAG 与知识库**
-  * [4.1 RAG、Milvus 与 LangChain](docs/04_RAG 与知识库/4.1_RAG 检索增强生成.md)
+* **04_RAG_与知识库_RAG_Knowledge_Base**
+  * [01_RAG_原理与架构](docs/04_RAG_与知识库_RAG_Knowledge_Base/01_RAG_原理与架构.md)
+  * [02_向量数据库](docs/04_RAG_与知识库_RAG_Knowledge_Base/02_向量数据库.md)
+  * [03_检索增强技术](docs/04_RAG_与知识库_RAG_Knowledge_Base/03_检索增强技术.md)
+  * [04_LangChain_LlamaIndex_Haystack_框架对比](docs/04_RAG_与知识库_RAG_Knowledge_Base/04_LangChain_LlamaIndex_Haystack_框架对比.md)
+  * [05_知识库构建与维护](docs/04_RAG_与知识库_RAG_Knowledge_Base/05_知识库构建与维护.md)
 
 ---
 
-* **五、Agent 开发**
-  * [5.1 Agent 设计与工作流](docs/05_Agent 开发/5.1_Agent 设计与工作流.md)
-  * [5.2 MCP 协议](docs/05_Agent 开发/5.2_MCP 协议.md)
-  * [5.3 Dify 工作流平台](docs/05_Agent 开发/5.3_Dify 工作流平台.md)
-  * [5.4 AppAgent Android 自动化](docs/05_Agent 开发/5.4_AppAgent.md)
+* **05_Agent_与工作流_Agent_Workflows**
+  * [01_Agent_框架与范式](docs/05_Agent_与工作流_Agent_Workflows/01_Agent_框架与范式.md)
+  * [02_LangGraph_CrewAI_AutoGen_Dify](docs/05_Agent_与工作流_Agent_Workflows/02_LangGraph_CrewAI_AutoGen_Dify.md)
+  * [03_Tool_Calling_与_MCP_集成](docs/05_Agent_与工作流_Agent_Workflows/03_Tool_Calling_与_MCP_集成.md)
+  * [04_Memory_与状态管理](docs/05_Agent_与工作流_Agent_Workflows/04_Memory_与状态管理.md)
+  * [05_复杂_Agent_系统设计](docs/05_Agent_与工作流_Agent_Workflows/05_复杂_Agent_系统设计.md)
 
 ---
 
-* **六、工程化**
-  * [6.1 FastAPI 服务化](docs/06_工程化/6.1_FastAPI 服务化.md)
-  * [6.2 Docker 容器化](docs/06_工程化/6.2_Docker.md)
+* **06_提示工程与评估_Prompt_Engineering_Evaluation**
+  * [01_提示设计最佳实践](docs/06_提示工程与评估_Prompt_Engineering_Evaluation/01_提示设计最佳实践.md)
+  * [02_评估方法](docs/06_提示工程与评估_Prompt_Engineering_Evaluation/02_评估方法.md)
+  * [03_安全与对齐](docs/06_提示工程与评估_Prompt_Engineering_Evaluation/03_安全与对齐.md)
 
 ---
 
-* **七、项目总结**
-  * [7.0 本章说明](docs/07_项目总结/README.md)
-  * **CineMaker 项目手册**
-    * [7.1 产品工作流](docs/07_项目总结/7.1_CineMaker/7.1.1_产品工作流.md)
-    * [7.2 技术架构](docs/07_项目总结/7.1_CineMaker/7.1.2_技术架构.md)
-    * [7.3 提示词指南](docs/07_项目总结/7.1_CineMaker/7.1.3_提示词指南.md)
-    * [7.4 火山引擎 API 配置](docs/07_项目总结/7.1_CineMaker/7.1.4_火山引擎 API 申请指南.md)
-  * **OpenClaw 部署实践**
-    * [7.5 部署总览](docs/07_项目总结/7.2_OpenClaw-Deployment-Issues/README.md)
-    * [7.6 部署指南](docs/07_项目总结/7.2_OpenClaw-Deployment-Issues/7.2.1_OpenClaw_Deploy_Guide.md)
-    * [7.7 踩坑与实践](docs/07_项目总结/7.2_OpenClaw-Deployment-Issues/7.2.2_OpenClaw_Pitfalls_and_Practices.md)
-    * [7.8 Nginx WebUI](docs/07_项目总结/7.2_OpenClaw-Deployment-Issues/7.2.3_OpenClaw_Nginx_WebUI.md)
-    * [7.9 Workspace](docs/07_项目总结/7.2_OpenClaw-Deployment-Issues/7.2.4_OpenClaw_Workspace.md)
-    * [7.10 Skills](docs/07_项目总结/7.2_OpenClaw-Deployment-Issues/7.2.5_OpenClaw_Skills.md)
-    * [7.11 原生工具插件](docs/07_项目总结/7.2_OpenClaw-Deployment-Issues/7.2.6_OpenClaw_Native_Tools_Plugin.md)
-    * [7.12 安全与复盘](docs/07_项目总结/7.2_OpenClaw-Deployment-Issues/7.2.7_OpenClaw_Security_and_Retrospective.md)
+* **07_工程化与MLOps_Engineering_LLMOps**
+  * [01_实验跟踪与版本管理](docs/07_工程化与MLOps_Engineering_LLMOps/01_实验跟踪与版本管理.md)
+  * [02_模型注册与生命周期](docs/07_工程化与MLOps_Engineering_LLMOps/02_模型注册与生命周期.md)
+  * [03_容器化与编排](docs/07_工程化与MLOps_Engineering_LLMOps/03_容器化与编排.md)
+  * [04_API_服务化](docs/07_工程化与MLOps_Engineering_LLMOps/04_API_服务化.md)
+  * [05_监控_可观测性与成本控制](docs/07_工程化与MLOps_Engineering_LLMOps/05_监控_可观测性与成本控制.md)
+  * [06_CI_CD_流水线与自动化](docs/07_工程化与MLOps_Engineering_LLMOps/06_CI_CD_流水线与自动化.md)
 
 ---
 
-* **八、OpenClaw 实战系列** 🦞
-  * [8.0 本章说明](docs/08_OpenClaw 实战/README.md)
-  * [8.1 Dashboard 部署与移动端优化](docs/08_OpenClaw 实战/01_Dashboard 部署与移动端优化.md)
-  * [8.2 双龙虾架构设计与实现](docs/08_OpenClaw 实战/02_双龙虾架构设计与实现.md)
-  * [8.3 Git 记忆同步机制详解](docs/08_OpenClaw 实战/03_Git 记忆同步机制详解.md)
-  * [8.4 OpenClaw 本地部署指南](docs/08_OpenClaw 实战/04_OpenClaw 本地部署指南.md)
-  * [8.5 Gate 交易所 MCP 集成](docs/08_OpenClaw 实战/05_Gate 交易所 MCP 集成.md)
-  * [8.6 BTC 量化交易策略实录](docs/08_OpenClaw 实战/06_BTC 量化交易策略实录.md)
-  * [8.7 OpenClaw 技能开发指南](docs/08_OpenClaw 实战/07_OpenClaw 技能开发指南.md)
-  * [8.8 常见问题与故障排查](docs/08_OpenClaw 实战/08_常见问题与故障排查.md)
+* **08_安全_合规与治理_Security_Governance**
+  * [01_数据隐私与_PII_防护](docs/08_安全_合规与治理_Security_Governance/01_数据隐私与_PII_防护.md)
+  * [02_模型安全](docs/08_安全_合规与治理_Security_Governance/02_模型安全.md)
+  * [03_内容安全与审核](docs/08_安全_合规与治理_Security_Governance/03_内容安全与审核.md)
+  * [04_企业级治理与合规](docs/08_安全_合规与治理_Security_Governance/04_企业级治理与合规.md)
+
+---
+
+* **09_前沿与扩展_Advanced_Topics**
+  * [01_MoE_混合专家模型](docs/09_前沿与扩展_Advanced_Topics/01_MoE_混合专家模型.md)
+  * [02_长上下文与推理优化](docs/09_前沿与扩展_Advanced_Topics/02_长上下文与推理优化.md)
+  * [03_Multi-Modal_与_Agentic_AI](docs/09_前沿与扩展_Advanced_Topics/03_Multi-Modal_与_Agentic_AI.md)
+  * [04_开源生态与社区资源](docs/09_前沿与扩展_Advanced_Topics/04_开源生态与社区资源.md)
+
+---
+
+* **10_项目实战与案例_Projects_Case_Studies**
+  * [CineMaker_项目总结](docs/10_项目实战与案例_Projects_Case_Studies/CineMaker_项目总结/README.md)
+    * [产品工作流](docs/10_项目实战与案例_Projects_Case_Studies/CineMaker_项目总结/产品工作流.md)
+    * [技术架构](docs/10_项目实战与案例_Projects_Case_Studies/CineMaker_项目总结/技术架构.md)
+    * [提示词指南](docs/10_项目实战与案例_Projects_Case_Studies/CineMaker_项目总结/提示词指南.md)
+    * [火山引擎API申请指南](docs/10_项目实战与案例_Projects_Case_Studies/CineMaker_项目总结/火山引擎API申请指南.md)
+  * [OpenClaw_实战系列](docs/10_项目实战与案例_Projects_Case_Studies/OpenClaw_实战系列/README.md)
+    * [Dashboard_部署与移动端优化](docs/10_项目实战与案例_Projects_Case_Studies/OpenClaw_实战系列/Dashboard_部署与移动端优化.md)
+    * [双龙虾架构设计与实现](docs/10_项目实战与案例_Projects_Case_Studies/OpenClaw_实战系列/双龙虾架构设计与实现.md)
+    * [Git_记忆同步机制详解](docs/10_项目实战与案例_Projects_Case_Studies/OpenClaw_实战系列/Git_记忆同步机制详解.md)
+    * [OpenClaw_本地部署指南](docs/10_项目实战与案例_Projects_Case_Studies/OpenClaw_实战系列/OpenClaw_本地部署指南.md)
+    * [Gate_交易所_MCP_集成](docs/10_项目实战与案例_Projects_Case_Studies/OpenClaw_实战系列/Gate_交易所_MCP_集成.md)
+    * [BTC_量化交易策略实录](docs/10_项目实战与案例_Projects_Case_Studies/OpenClaw_实战系列/BTC_量化交易策略实录.md)
+    * [OpenClaw_技能开发指南](docs/10_项目实战与案例_Projects_Case_Studies/OpenClaw_实战系列/OpenClaw_技能开发指南.md)
+    * [常见问题与故障排查](docs/10_项目实战与案例_Projects_Case_Studies/OpenClaw_实战系列/常见问题与故障排查.md)
+
+---
+
+* **附录_Appendix**
+  * [工具链与环境配置](docs/附录_Appendix/工具链与环境配置.md)
+  * [常用资源链接与论文](docs/附录_Appendix/常用资源链接与论文.md)
+  * [术语表_Glossary](docs/附录_Appendix/术语表_Glossary.md)
+  * [FAQ_与故障排查](docs/附录_Appendix/FAQ_与故障排查.md)
